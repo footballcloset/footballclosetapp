@@ -27,7 +27,8 @@ import {
   Save,
   Palette,
   Pencil,
-  History
+  History,
+  Search
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -40,8 +41,8 @@ import {
   PieChart, 
   Pie, 
   Cell,
-  LineChart,
-  Line,
+  LineChart, 
+  Line, 
   Legend
 } from 'recharts';
 
@@ -63,12 +64,12 @@ import {
   signInWithEmailAndPassword, 
   onAuthStateChanged,
   signInWithCustomToken,
+  signInAnonymously,
   signOut
 } from 'firebase/auth';
 
-// --- CONFIGURAÇÃO FIREBASE & STORE ---
-// Esta linha permite que o código funcione aqui na pré-visualização.
-// AO LEVAR PARA O STACKBLITZ, substitua esta linha pelo objeto 'const firebaseConfig = { ... }' com suas chaves.
+// --- CONFIGURAÇÃO FIREBASE ---
+// Mantenha as chaves do seu projeto aqui.
 const firebaseConfig = {
   apiKey: "AIzaSyC6-xG7JU5ZvnxWiK5DARb68vEerl0yOws",
   authDomain: "football-closet-app.firebaseapp.com",
@@ -82,15 +83,20 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// ATIVAÇÃO DA PERSISTÊNCIA OFFLINE
-enableIndexedDbPersistence(db).catch((err) => {
-    if (err.code == 'failed-precondition') {
-        console.log("Persistência falhou: Múltiplas abas abertas.");
-    } else if (err.code == 'unimplemented') {
-        console.log("Navegador não suporta persistência offline.");
-    }
-});
+// Tenta ativar a persistência offline sem quebrar a app se falhar
+try {
+    enableIndexedDbPersistence(db).catch((err) => {
+        if (err.code == 'failed-precondition') {
+            console.log("Persistência falhou: Múltiplas abas abertas.");
+        } else if (err.code == 'unimplemented') {
+            console.log("Navegador não suporta persistência offline.");
+        }
+    });
+} catch (e) {
+    console.log("Erro ao iniciar persistencia", e);
+}
 
+// IMPORTANTE: Mantenha o ID igual ao que usava antes para não perder dados.
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 // Configurações Padrão
@@ -101,7 +107,6 @@ const DEFAULT_CONFIG = {
   logoBgColor: "#ffffff"
 };
 
-// Cores do tema
 const PIE_COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
 const BAR_COLORS = ['#2563eb', '#db2777', '#ea580c', '#7c3aed', '#16a34a'];
 const MONTHS = [
@@ -115,8 +120,7 @@ const SIZES = {
   'Infantil': ['5-6 anos', '7-8 anos', '9-10 anos', '11-12 anos', '13-14 anos']
 };
 
-// --- Componente: Tela de Login ---
-
+// --- TELA DE LOGIN ---
 const LoginScreen = ({ onLogin, loading, config }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -193,8 +197,7 @@ const LoginScreen = ({ onLogin, loading, config }) => {
   );
 };
 
-// --- Componente: Gerenciador de Configurações ---
-
+// --- CONFIGURAÇÕES ---
 const SettingsManager = ({ config, user }) => {
     const [localConfig, setLocalConfig] = useState(config);
     const [saving, setSaving] = useState(false);
@@ -246,9 +249,8 @@ const SettingsManager = ({ config, user }) => {
                                 value={localConfig.logoUrl}
                                 onChange={(e) => setLocalConfig({...localConfig, logoUrl: e.target.value})}
                                 className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-400 outline-none text-sm"
-                                placeholder="Cole o link da imagem ou nome do arquivo"
+                                placeholder="Cole o link da imagem"
                             />
-                            <p className="text-xs text-slate-500 mt-1">Ex: FOOTBALL CLOSET - logomarca.png</p>
                         </div>
 
                         <div className="grid grid-cols-2 gap-4">
@@ -261,7 +263,6 @@ const SettingsManager = ({ config, user }) => {
                                         onChange={(e) => setLocalConfig({...localConfig, sidebarColor: e.target.value})}
                                         className="h-10 w-full rounded cursor-pointer border-none p-0"
                                     />
-                                    <span className="text-xs text-slate-500 font-mono">{localConfig.sidebarColor}</span>
                                 </div>
                             </div>
                             <div>
@@ -273,7 +274,6 @@ const SettingsManager = ({ config, user }) => {
                                         onChange={(e) => setLocalConfig({...localConfig, logoBgColor: e.target.value})}
                                         className="h-10 w-full rounded cursor-pointer border-none p-0"
                                     />
-                                    <span className="text-xs text-slate-500 font-mono">{localConfig.logoBgColor}</span>
                                 </div>
                             </div>
                         </div>
@@ -325,8 +325,7 @@ const SettingsManager = ({ config, user }) => {
     );
 };
 
-// --- Componente: Ranking Dashboard ---
-
+// --- DASHBOARD DE RANKING ---
 const RankingDashboard = ({ transactions }) => {
   const [sizeTab, setSizeTab] = useState('Masculino');
   const [rankYear, setRankYear] = useState(new Date().getFullYear());
@@ -507,8 +506,206 @@ const RankingDashboard = ({ transactions }) => {
   );
 };
 
-// --- Componente: Pedidos e Estoque e Financeiro ---
+// --- GESTÃO DE ESTOQUE (StockManager) ---
+const StockManager = ({ inventory, user }) => {
+    const [newItem, setNewItem] = useState({ name: '', category: 'Masculino', size: 'M', quantity: 0, price: 0 });
+    const [showForm, setShowForm] = useState(false);
+    const [editingId, setEditingId] = useState(null);
+    const [filterCategory, setFilterCategory] = useState('Todos');
+    const [searchTerm, setSearchTerm] = useState(''); // Estado para a busca
 
+    const handleCategoryChange = (e) => { const newCategory = e.target.value; setNewItem({ ...newItem, category: newCategory, size: SIZES[newCategory][0] }); };
+    
+    const handleEdit = (item) => {
+        setNewItem({
+            name: item.name,
+            category: item.category,
+            size: item.size,
+            quantity: item.quantity,
+            price: item.price
+        });
+        setEditingId(item.id);
+        setShowForm(true);
+    };
+
+    const handleSaveItem = async () => {
+        if (!newItem.name || !user) return;
+
+        const nameToCompare = newItem.name.trim().toLowerCase();
+
+        try {
+        if (editingId) {
+            const itemRef = doc(db, 'artifacts', appId, 'public', 'data', 'inventory', editingId);
+            await updateDoc(itemRef, {
+                name: newItem.name,
+                category: newItem.category,
+                size: newItem.size,
+                quantity: Number(newItem.quantity),
+                price: Number(newItem.price)
+            });
+            alert('Produto atualizado com sucesso!');
+        } else {
+            const existingItem = inventory.find(item => 
+                item.name.trim().toLowerCase() === nameToCompare && 
+                item.category === newItem.category && 
+                item.size === newItem.size
+            );
+
+            if (existingItem) {
+                const itemRef = doc(db, 'artifacts', appId, 'public', 'data', 'inventory', existingItem.id);
+                const newQuantity = Number(existingItem.quantity) + Number(newItem.quantity);
+                await updateDoc(itemRef, { quantity: newQuantity });
+                alert(`Produto já existente! Estoque somado para ${newQuantity}.`);
+            } else {
+                await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'inventory'), {
+                    ...newItem,
+                    name: newItem.name.trim(),
+                    quantity: Number(newItem.quantity),
+                    price: Number(newItem.price),
+                    isClearance: false,
+                    createdAt: Date.now()
+                });
+            }
+        }
+
+        setNewItem({ name: '', category: 'Masculino', size: 'M', quantity: 0, price: 0 });
+        setEditingId(null);
+        setShowForm(false);
+
+        } catch (error) {
+        console.error("Erro ao salvar:", error);
+        alert("Erro ao salvar produto.");
+        }
+    };
+
+    const handleDelete = async (id) => { 
+        if (window.confirm('Tem certeza que deseja excluir este item?') && user) { 
+            try { 
+                await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'inventory', id)); 
+            } catch (error) { 
+                console.error("Erro ao excluir:", error); 
+                alert("Erro ao excluir item.");
+            } 
+        } 
+    };
+    
+    const handleToggleClearance = async (item) => {
+        if (!user) return;
+        const itemRef = doc(db, 'artifacts', appId, 'public', 'data', 'inventory', item.id);
+        if (item.isClearance) { await updateDoc(itemRef, { isClearance: false, price: item.originalPrice || item.price }); } else { await updateDoc(itemRef, { isClearance: true, originalPrice: item.price, price: Number((item.price * 0.7).toFixed(2)) }); }
+    };
+
+    const counts = {
+        masculino: inventory.filter(i => i.category === 'Masculino').reduce((acc, i) => acc + i.quantity, 0),
+        feminino: inventory.filter(i => i.category === 'Feminino').reduce((acc, i) => acc + i.quantity, 0),
+        infantil: inventory.filter(i => i.category === 'Infantil').reduce((acc, i) => acc + i.quantity, 0),
+        queima: inventory.filter(i => i.isClearance).reduce((acc, i) => acc + i.quantity, 0),
+    };
+
+    // Lógica de Filtragem e Ordenação
+    const filteredInventory = inventory
+        .filter(item => {
+            // Filtro por Categoria
+            if (filterCategory === 'Todos') return true;
+            if (filterCategory === 'Queima') return item.isClearance;
+            return item.category === filterCategory;
+        })
+        .filter(item => {
+            // Filtro por Pesquisa (Nome)
+            if (!searchTerm) return true;
+            return item.name.toLowerCase().includes(searchTerm.toLowerCase());
+        })
+        .sort((a, b) => a.name.localeCompare(b.name)); // Ordenação Alfabética
+
+    return (
+        <div className="space-y-6 animate-fade-in">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4"> 
+            <button onClick={() => setFilterCategory('Todos')} className={`p-4 rounded-xl border transition-all ${filterCategory === 'Todos' ? 'bg-slate-800 text-white border-slate-800 shadow-md' : 'bg-white border-slate-200 hover:border-slate-300 text-slate-600'}`}><span className="block font-bold text-xl">{inventory.reduce((acc, i) => acc + i.quantity, 0)}</span><span className="text-xs uppercase tracking-wider opacity-70 flex items-center gap-2 justify-center"><Filter size={12}/> Todos</span></button>
+            <button onClick={() => setFilterCategory('Masculino')} className={`p-4 rounded-xl border transition-all ${filterCategory === 'Masculino' ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-200' : 'bg-white border-blue-100 text-blue-600 hover:bg-blue-50'}`}><span className="block font-bold text-xl">{counts.masculino}</span><span className="text-xs uppercase tracking-wider opacity-70">Masculino</span></button>
+            <button onClick={() => setFilterCategory('Feminino')} className={`p-4 rounded-xl border transition-all ${filterCategory === 'Feminino' ? 'bg-pink-600 text-white border-pink-600 shadow-md shadow-pink-200' : 'bg-white border-pink-100 text-pink-600 hover:bg-pink-50'}`}><span className="block font-bold text-xl">{counts.feminino}</span><span className="text-xs uppercase tracking-wider opacity-70">Feminino</span></button>
+            <button onClick={() => setFilterCategory('Infantil')} className={`p-4 rounded-xl border transition-all ${filterCategory === 'Infantil' ? 'bg-orange-500 text-white border-orange-500 shadow-md shadow-orange-200' : 'bg-white border-orange-100 text-orange-600 hover:bg-orange-50'}`}><span className="block font-bold text-xl">{counts.infantil}</span><span className="text-xs uppercase tracking-wider opacity-70">Infantil</span></button>
+            <button onClick={() => setFilterCategory('Queima')} className={`p-4 rounded-xl border transition-all ${filterCategory === 'Queima' ? 'bg-red-600 text-white border-red-600 shadow-md shadow-red-200' : 'bg-white border-red-100 text-red-600 hover:bg-red-50'}`}><span className="block font-bold text-xl">{counts.queima}</span><span className="text-xs uppercase tracking-wider opacity-70 flex items-center gap-2 justify-center"><Flame size={12}/> Queima</span></button>
+        </div>
+        
+        <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+            <h2 className="text-xl font-bold text-slate-800">{filterCategory === 'Todos' ? 'Todos os Produtos' : filterCategory === 'Queima' ? 'Itens em Queima de Estoque' : `Estoque ${filterCategory}`}</h2>
+            
+            <div className="flex gap-2 w-full md:w-auto">
+                {/* Barra de Pesquisa */}
+                <div className="relative flex-1 md:flex-none md:w-64">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <input 
+                        type="text" 
+                        placeholder="Buscar peça..." 
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
+                    />
+                </div>
+
+                <button 
+                    onClick={() => {
+                        setEditingId(null);
+                        setNewItem({ name: '', category: 'Masculino', size: 'M', quantity: 0, price: 0 });
+                        setShowForm(!showForm);
+                    }} 
+                    className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg transition-colors shadow-sm whitespace-nowrap"
+                >
+                    {showForm ? <X size={18}/> : <Plus size={18}/>}
+                    {showForm ? 'Cancelar' : 'Novo'}
+                </button>
+            </div>
+        </div>
+
+        {showForm && (
+            <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 animate-slide-down">
+                <div className="mb-4">
+                    <h3 className="text-lg font-bold text-slate-700">{editingId ? 'Editar Produto' : 'Adicionar Produto'}</h3>
+                </div>
+            <div className="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
+                <div className="md:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-1">Nome do Produto</label><input type="text" value={newItem.name} onChange={e => setNewItem({...newItem, name: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="Ex: Camiseta Polo"/></div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">Categoria</label><select value={newItem.category} onChange={handleCategoryChange} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-emerald-500 outline-none"><option value="Masculino">Masculino</option><option value="Feminino">Feminino</option><option value="Infantil">Infantil</option></select></div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">Tamanho</label><select value={newItem.size} onChange={e => setNewItem({...newItem, size: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-emerald-500 outline-none">{SIZES[newItem.category].map(size => (<option key={size} value={size}>{size}</option>))}</select></div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">Qtd.</label><input type="number" value={newItem.quantity} onChange={e => setNewItem({...newItem, quantity: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-emerald-500 outline-none"/></div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">Preço (R$)</label><input type="number" value={newItem.price} onChange={e => setNewItem({...newItem, price: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-emerald-500 outline-none"/></div>
+            </div>
+            <button onClick={handleSaveItem} className="mt-4 w-full md:w-auto bg-emerald-600 text-white px-6 py-2 rounded hover:bg-emerald-700">
+                {editingId ? 'Atualizar Produto' : 'Salvar Produto'}
+            </button>
+            </div>
+        )}
+        <div className="overflow-x-auto bg-white rounded-xl shadow-sm border border-slate-200">
+            <table className="w-full text-left border-collapse"><thead className="bg-slate-50 border-b border-slate-200 text-slate-600"><tr><th className="p-4 font-semibold text-sm">Produto</th><th className="p-4 font-semibold text-sm">Categoria</th><th className="p-4 font-semibold text-sm">Tamanho</th><th className="p-4 font-semibold text-sm">Quantidade</th><th className="p-4 font-semibold text-sm">Preço Unit.</th><th className="p-4 font-semibold text-sm text-right">Ações</th></tr></thead>
+            <tbody>
+                {filteredInventory.map((item) => {
+                let rowClass = "border-b border-slate-100 hover:bg-slate-50 transition-colors";
+                if (item.quantity === 0) rowClass = "bg-red-100 border-b border-red-200 hover:bg-red-200 text-red-900";
+                else if (item.quantity === 1) rowClass = "bg-yellow-100 border-b border-yellow-200 hover:bg-yellow-200 text-yellow-900";
+                return (
+                    <tr key={item.id} className={rowClass}>
+                    <td className="p-4 font-medium">{item.name}{item.quantity === 0 && <span className="ml-2 text-xs bg-red-600 text-white px-2 py-0.5 rounded-full">ESGOTADO</span>}{item.quantity === 1 && <span className="ml-2 text-xs bg-yellow-600 text-white px-2 py-0.5 rounded-full">ACABANDO</span>}{item.isClearance && <span className="ml-2 text-xs bg-orange-500 text-white px-2 py-0.5 rounded-full inline-flex items-center gap-1">🔥 QUEIMA</span>}</td>
+                    <td className="p-4 text-sm opacity-80">{item.category}</td>
+                    <td className="p-4 font-semibold text-slate-600"><span className="bg-slate-100 border border-slate-200 px-2 py-1 rounded text-xs">{item.size || '-'}</span></td>
+                    <td className="p-4 font-bold">{item.quantity}</td>
+                    <td className="p-4">{item.isClearance ? (<div><span className="line-through text-slate-400 text-xs">R$ {item.originalPrice?.toFixed(2)}</span><div className="text-orange-600 font-bold">R$ {item.price.toFixed(2)}</div></div>) : (<span>R$ {item.price.toFixed(2)}</span>)}</td>
+                    <td className="p-4 text-right flex justify-end gap-2">
+                        {/* Botão de Editar */}
+                        <button onClick={() => handleEdit(item)} className="p-2 text-slate-400 hover:text-blue-600 transition-colors" title="Editar"><Pencil size={18} /></button>
+                        <button onClick={() => handleToggleClearance(item)} title="Queima de Estoque" className={`p-2 rounded-full transition-colors ${item.isClearance ? 'bg-orange-100 text-orange-600' : 'text-slate-300 hover:bg-orange-50 hover:text-orange-500'}`}><Flame size={18} /></button>
+                        <button onClick={() => handleDelete(item.id)} className="p-2 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={18} /></button>
+                    </td>
+                    </tr>
+                );
+                })}
+                {filteredInventory.length === 0 && (<tr><td colSpan="6" className="p-8 text-center text-slate-400">{filterCategory === 'Todos' ? 'Nenhum produto cadastrado.' : `Nenhum produto encontrado na categoria ${filterCategory}.`}</td></tr>)}
+            </tbody>
+            </table>
+        </div>
+        </div>
+    );
+};
+
+// --- GESTÃO DE PEDIDOS ---
 const OrdersManager = ({ orders, user, inventory }) => {
   const [newOrder, setNewOrder] = useState({ 
     date: '', 
@@ -756,178 +953,6 @@ const Dashboard = ({ inventory, transactions, orders }) => {
   );
 };
 
-const StockManager = ({ inventory, user }) => {
-  const [newItem, setNewItem] = useState({ name: '', category: 'Masculino', size: 'M', quantity: 0, price: 0 });
-  const [showForm, setShowForm] = useState(false);
-  const [editingId, setEditingId] = useState(null); // Novo estado para edição
-  const [filterCategory, setFilterCategory] = useState('Todos');
-  
-  const handleCategoryChange = (e) => { const newCategory = e.target.value; setNewItem({ ...newItem, category: newCategory, size: SIZES[newCategory][0] }); };
-  
-  const handleEdit = (item) => {
-      setNewItem({
-          name: item.name,
-          category: item.category,
-          size: item.size,
-          quantity: item.quantity,
-          price: item.price
-      });
-      setEditingId(item.id);
-      setShowForm(true);
-  };
-
-  const handleSaveItem = async () => {
-    if (!newItem.name || !user) return;
-
-    // Normalizar nome para comparação
-    const nameToCompare = newItem.name.trim().toLowerCase();
-
-    try {
-      if (editingId) {
-          // --- MODO EDIÇÃO ---
-          const itemRef = doc(db, 'artifacts', appId, 'public', 'data', 'inventory', editingId);
-          await updateDoc(itemRef, {
-              name: newItem.name,
-              category: newItem.category,
-              size: newItem.size,
-              quantity: Number(newItem.quantity),
-              price: Number(newItem.price)
-          });
-          alert('Produto atualizado com sucesso!');
-      } else {
-          // --- MODO ADIÇÃO ---
-          // Verificar duplicatas apenas se não estiver editando
-          const existingItem = inventory.find(item => 
-              item.name.trim().toLowerCase() === nameToCompare && 
-              item.category === newItem.category && 
-              item.size === newItem.size
-          );
-
-          if (existingItem) {
-            // Atualizar quantidade se já existe
-            const itemRef = doc(db, 'artifacts', appId, 'public', 'data', 'inventory', existingItem.id);
-            const newQuantity = Number(existingItem.quantity) + Number(newItem.quantity);
-            await updateDoc(itemRef, { quantity: newQuantity });
-            alert(`Produto já existente! Estoque somado para ${newQuantity}.`);
-          } else {
-            // Criar novo
-            await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'inventory'), {
-                ...newItem,
-                name: newItem.name.trim(),
-                quantity: Number(newItem.quantity),
-                price: Number(newItem.price),
-                isClearance: false,
-                createdAt: Date.now()
-            });
-          }
-      }
-
-      // Resetar tudo
-      setNewItem({ name: '', category: 'Masculino', size: 'M', quantity: 0, price: 0 });
-      setEditingId(null);
-      setShowForm(false);
-
-    } catch (error) {
-      console.error("Erro ao salvar:", error);
-      alert("Erro ao salvar produto.");
-    }
-  };
-
-  const handleDelete = async (id) => { 
-      if (window.confirm('Tem certeza que deseja excluir este item?') && user) { 
-          try { 
-              await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'inventory', id)); 
-          } catch (error) { 
-              console.error("Erro ao excluir:", error); 
-              alert("Erro ao excluir item.");
-          } 
-      } 
-  };
-  
-  const handleToggleClearance = async (item) => {
-    if (!user) return;
-    const itemRef = doc(db, 'artifacts', appId, 'public', 'data', 'inventory', item.id);
-    if (item.isClearance) { await updateDoc(itemRef, { isClearance: false, price: item.originalPrice || item.price }); } else { await updateDoc(itemRef, { isClearance: true, originalPrice: item.price, price: Number((item.price * 0.7).toFixed(2)) }); }
-  };
-  const counts = {
-    masculino: inventory.filter(i => i.category === 'Masculino').reduce((acc, i) => acc + i.quantity, 0),
-    feminino: inventory.filter(i => i.category === 'Feminino').reduce((acc, i) => acc + i.quantity, 0),
-    infantil: inventory.filter(i => i.category === 'Infantil').reduce((acc, i) => acc + i.quantity, 0),
-    queima: inventory.filter(i => i.isClearance).reduce((acc, i) => acc + i.quantity, 0),
-  };
-  const filteredInventory = filterCategory === 'Todos' ? inventory : filterCategory === 'Queima' ? inventory.filter(item => item.isClearance) : inventory.filter(item => item.category === filterCategory);
-  
-  return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4"> 
-        <button onClick={() => setFilterCategory('Todos')} className={`p-4 rounded-xl border transition-all ${filterCategory === 'Todos' ? 'bg-slate-800 text-white border-slate-800 shadow-md' : 'bg-white border-slate-200 hover:border-slate-300 text-slate-600'}`}><span className="block font-bold text-xl">{inventory.reduce((acc, i) => acc + i.quantity, 0)}</span><span className="text-xs uppercase tracking-wider opacity-70 flex items-center gap-2 justify-center"><Filter size={12}/> Todos</span></button>
-        <button onClick={() => setFilterCategory('Masculino')} className={`p-4 rounded-xl border transition-all ${filterCategory === 'Masculino' ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-200' : 'bg-white border-blue-100 text-blue-600 hover:bg-blue-50'}`}><span className="block font-bold text-xl">{counts.masculino}</span><span className="text-xs uppercase tracking-wider opacity-70">Masculino</span></button>
-        <button onClick={() => setFilterCategory('Feminino')} className={`p-4 rounded-xl border transition-all ${filterCategory === 'Feminino' ? 'bg-pink-600 text-white border-pink-600 shadow-md shadow-pink-200' : 'bg-white border-pink-100 text-pink-600 hover:bg-pink-50'}`}><span className="block font-bold text-xl">{counts.feminino}</span><span className="text-xs uppercase tracking-wider opacity-70">Feminino</span></button>
-        <button onClick={() => setFilterCategory('Infantil')} className={`p-4 rounded-xl border transition-all ${filterCategory === 'Infantil' ? 'bg-orange-500 text-white border-orange-500 shadow-md shadow-orange-200' : 'bg-white border-orange-100 text-orange-600 hover:bg-orange-50'}`}><span className="block font-bold text-xl">{counts.infantil}</span><span className="text-xs uppercase tracking-wider opacity-70">Infantil</span></button>
-        <button onClick={() => setFilterCategory('Queima')} className={`p-4 rounded-xl border transition-all ${filterCategory === 'Queima' ? 'bg-red-600 text-white border-red-600 shadow-md shadow-red-200' : 'bg-white border-red-100 text-red-600 hover:bg-red-50'}`}><span className="block font-bold text-xl">{counts.queima}</span><span className="text-xs uppercase tracking-wider opacity-70 flex items-center gap-2 justify-center"><Flame size={12}/> Queima</span></button>
-      </div>
-      <div className="flex justify-between items-center">
-        <h2 className="text-xl font-bold text-slate-800">{filterCategory === 'Todos' ? 'Todos os Produtos' : filterCategory === 'Queima' ? 'Itens em Queima de Estoque' : `Estoque ${filterCategory}`}</h2>
-        <button 
-            onClick={() => {
-                setEditingId(null); // Limpa edição ao abrir novo
-                setNewItem({ name: '', category: 'Masculino', size: 'M', quantity: 0, price: 0 });
-                setShowForm(!showForm);
-            }} 
-            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg transition-colors shadow-sm"
-        >
-            {showForm ? <X size={18}/> : <Plus size={18}/>}
-            {showForm ? 'Cancelar' : 'Novo Produto'}
-        </button>
-      </div>
-      {showForm && (
-        <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 animate-slide-down">
-            <div className="mb-4">
-                <h3 className="text-lg font-bold text-slate-700">{editingId ? 'Editar Produto' : 'Adicionar Produto'}</h3>
-            </div>
-          <div className="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
-            <div className="md:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-1">Nome do Produto</label><input type="text" value={newItem.name} onChange={e => setNewItem({...newItem, name: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="Ex: Camiseta Polo"/></div>
-            <div><label className="block text-sm font-medium text-slate-700 mb-1">Categoria</label><select value={newItem.category} onChange={handleCategoryChange} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-emerald-500 outline-none"><option value="Masculino">Masculino</option><option value="Feminino">Feminino</option><option value="Infantil">Infantil</option></select></div>
-            <div><label className="block text-sm font-medium text-slate-700 mb-1">Tamanho</label><select value={newItem.size} onChange={e => setNewItem({...newItem, size: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-emerald-500 outline-none">{SIZES[newItem.category].map(size => (<option key={size} value={size}>{size}</option>))}</select></div>
-            <div><label className="block text-sm font-medium text-slate-700 mb-1">Qtd.</label><input type="number" value={newItem.quantity} onChange={e => setNewItem({...newItem, quantity: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-emerald-500 outline-none"/></div>
-            <div><label className="block text-sm font-medium text-slate-700 mb-1">Preço (R$)</label><input type="number" value={newItem.price} onChange={e => setNewItem({...newItem, price: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-emerald-500 outline-none"/></div>
-          </div>
-          <button onClick={handleSaveItem} className="mt-4 w-full md:w-auto bg-emerald-600 text-white px-6 py-2 rounded hover:bg-emerald-700">
-              {editingId ? 'Atualizar Produto' : 'Salvar Produto'}
-          </button>
-        </div>
-      )}
-      <div className="overflow-x-auto bg-white rounded-xl shadow-sm border border-slate-200">
-        <table className="w-full text-left border-collapse"><thead className="bg-slate-50 border-b border-slate-200 text-slate-600"><tr><th className="p-4 font-semibold text-sm">Produto</th><th className="p-4 font-semibold text-sm">Categoria</th><th className="p-4 font-semibold text-sm">Tamanho</th><th className="p-4 font-semibold text-sm">Quantidade</th><th className="p-4 font-semibold text-sm">Preço Unit.</th><th className="p-4 font-semibold text-sm text-right">Ações</th></tr></thead>
-          <tbody>
-            {filteredInventory.map((item) => {
-              let rowClass = "border-b border-slate-100 hover:bg-slate-50 transition-colors";
-              if (item.quantity === 0) rowClass = "bg-red-100 border-b border-red-200 hover:bg-red-200 text-red-900";
-              else if (item.quantity === 1) rowClass = "bg-yellow-100 border-b border-yellow-200 hover:bg-yellow-200 text-yellow-900";
-              return (
-                <tr key={item.id} className={rowClass}>
-                  <td className="p-4 font-medium">{item.name}{item.quantity === 0 && <span className="ml-2 text-xs bg-red-600 text-white px-2 py-0.5 rounded-full">ESGOTADO</span>}{item.quantity === 1 && <span className="ml-2 text-xs bg-yellow-600 text-white px-2 py-0.5 rounded-full">ACABANDO</span>}{item.isClearance && <span className="ml-2 text-xs bg-orange-500 text-white px-2 py-0.5 rounded-full inline-flex items-center gap-1">🔥 QUEIMA</span>}</td>
-                  <td className="p-4 text-sm opacity-80">{item.category}</td>
-                  <td className="p-4 font-semibold text-slate-600"><span className="bg-slate-100 border border-slate-200 px-2 py-1 rounded text-xs">{item.size || '-'}</span></td>
-                  <td className="p-4 font-bold">{item.quantity}</td>
-                  <td className="p-4">{item.isClearance ? (<div><span className="line-through text-slate-400 text-xs">R$ {item.originalPrice?.toFixed(2)}</span><div className="text-orange-600 font-bold">R$ {item.price.toFixed(2)}</div></div>) : (<span>R$ {item.price.toFixed(2)}</span>)}</td>
-                  <td className="p-4 text-right flex justify-end gap-2">
-                    {/* Botão de Editar */}
-                    <button onClick={() => handleEdit(item)} className="p-2 text-slate-400 hover:text-blue-600 transition-colors" title="Editar"><Pencil size={18} /></button>
-                    <button onClick={() => handleToggleClearance(item)} title="Queima de Estoque" className={`p-2 rounded-full transition-colors ${item.isClearance ? 'bg-orange-100 text-orange-600' : 'text-slate-300 hover:bg-orange-50 hover:text-orange-500'}`}><Flame size={18} /></button>
-                    <button onClick={() => handleDelete(item.id)} className="p-2 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={18} /></button>
-                  </td>
-                </tr>
-              );
-            })}
-            {filteredInventory.length === 0 && (<tr><td colSpan="6" className="p-8 text-center text-slate-400">{filterCategory === 'Todos' ? 'Nenhum produto cadastrado.' : `Nenhum produto encontrado na categoria ${filterCategory}.`}</td></tr>)}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-};
-
 const FinancialManager = ({ transactions, user }) => {
   const [selectedMonthIndex, setSelectedMonthIndex] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -993,6 +1018,7 @@ const FinancialManager = ({ transactions, user }) => {
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true); 
   const [loadingAuth, setLoadingAuth] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine); 
   
@@ -1005,13 +1031,40 @@ export default function App() {
 
   useEffect(() => {
     const initAuth = async () => {
+        let signedIn = false;
+        // Tenta usar o token de ambiente se disponível
         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-            await signInWithCustomToken(auth, __initial_auth_token);
+            try {
+                await signInWithCustomToken(auth, __initial_auth_token);
+                signedIn = true;
+            } catch (error) {
+                // Ignora erro de token mismatch
+                if (error.code !== 'auth/custom-token-mismatch') {
+                    console.warn("Auto-auth failed:", error);
+                }
+            }
         }
+        
+        // Se falhar o token custom, tenta anónimo SE não estivermos logados
+        if (!signedIn) {
+            try {
+                await signInAnonymously(auth);
+            } catch (error) {
+                // Ignora silenciosamente o erro de operação restrita para não travar a UI
+                if (error.code !== 'auth/admin-restricted-operation') {
+                    console.error("Anonymous auth error:", error);
+                }
+            }
+        }
+        // Sempre finaliza o loading, mesmo se falhar a auth automática
+        setLoading(false);
     };
+    
     initAuth();
+
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
+      setLoading(false); // Remove o loading assim que o estado de auth é resolvido
     });
     
     const handleStatusChange = () => setIsOnline(navigator.onLine);
@@ -1063,7 +1116,7 @@ export default function App() {
       collection(db, 'artifacts', appId, 'public', 'data', 'inventory'), 
       (snapshot) => {
         const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        items.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        // Ordenação feita no componente StockManager para visualização
         setInventory(items);
       },
       (error) => console.error("Erro sync estoque:", error)
@@ -1096,6 +1149,10 @@ export default function App() {
       unsubOrders();
     };
   }, [user]);
+
+  if (loading) {
+      return <div className="min-h-screen flex items-center justify-center bg-slate-100 text-slate-500">Carregando Football Closet...</div>;
+  }
 
   if (!user) {
     return <LoginScreen onLogin={handleLogin} loading={loadingAuth} config={storeConfig} />;
