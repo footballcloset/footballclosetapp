@@ -28,7 +28,8 @@ import {
   Palette,
   Pencil,
   History,
-  Search
+  Search,
+  Layers // Novo ícone para o total geral
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -69,7 +70,6 @@ import {
 } from 'firebase/auth';
 
 // --- CONFIGURAÇÃO FIREBASE ---
-// Mantenha as chaves do seu projeto aqui.
 const firebaseConfig = {
   apiKey: "AIzaSyC6-xG7JU5ZvnxWiK5DARb68vEerl0yOws",
   authDomain: "football-closet-app.firebaseapp.com",
@@ -83,7 +83,7 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// Tenta ativar a persistência offline sem quebrar a app se falhar
+// Tentativa de persistência offline segura
 try {
     enableIndexedDbPersistence(db).catch((err) => {
         if (err.code == 'failed-precondition') {
@@ -93,10 +93,9 @@ try {
         }
     });
 } catch (e) {
-    console.log("Erro ao iniciar persistencia", e);
+    console.log("Persistência já habilitada ou erro não crítico.");
 }
 
-// IMPORTANTE: Mantenha o ID igual ao que usava antes para não perder dados.
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 // Configurações Padrão
@@ -929,22 +928,88 @@ const OrdersManager = ({ orders, user, inventory }) => {
 
 const Dashboard = ({ inventory, transactions, orders }) => {
   const totalValueStock = inventory.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0);
+  const totalStockItems = inventory.reduce((acc, i) => acc + i.quantity, 0); // Total de itens já em estoque
   const lowStockCount = inventory.filter(i => i.quantity === 0).length; // Corrigido para esgotados (0)
-  const pendingOrders = orders ? orders.filter(o => o.status !== 'Entregue').length : 0;
+  
+  // Lógica corrigida para contar PEÇAS e não apenas pedidos
+  const activeOrdersList = orders ? orders.filter(o => o.status !== 'Entregue') : [];
+  const pendingPieces = activeOrdersList.reduce((acc, curr) => acc + (Number(curr.quantity) || 0), 0);
+  const pendingOrdersCount = activeOrdersList.length;
+  
+  // Total Geral: Estoque Físico + O que está chegando
+  const grandTotal = totalStockItems + pendingPieces;
+
   const salesByMonth = transactions.filter(t => t.type === 'income').reduce((acc, curr) => {
       const month = new Date(curr.date).getMonth();
       acc[month] = (acc[month] || 0) + curr.amount;
       return acc;
     }, {});
   const salesData = MONTHS.map((m, i) => ({ name: m.substring(0, 3), vendas: salesByMonth[i] || 0 })).slice(0, new Date().getMonth() + 1);
+  
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Valor em Estoque</p><h3 className="text-xl font-bold text-slate-800">R$ {totalValueStock.toFixed(2)}</h3></div><div className="p-3 bg-blue-50 rounded-lg text-blue-600"><DollarSign size={20} /></div></div></div>
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Total Peças</p><h3 className="text-xl font-bold text-slate-800">{inventory.reduce((acc, i) => acc + i.quantity, 0)} un</h3></div><div className="p-3 bg-purple-50 rounded-lg text-purple-600"><Package size={20} /></div></div></div>
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Alerta Estoque (Esgotados)</p><h3 className="text-xl font-bold text-red-600">{lowStockCount} itens</h3></div><div className="p-3 bg-red-50 rounded-lg text-red-600"><AlertTriangle size={20} /></div></div></div>
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Pedidos Andamento</p><h3 className="text-xl font-bold text-indigo-600">{pendingOrders} pedidos</h3></div><div className="p-3 bg-indigo-50 rounded-lg text-indigo-600"><Truck size={20} /></div></div></div>
+      
+      {/* Barra de Total Geral (Nova funcionalidade) */}
+      <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-xl p-4 text-white flex justify-between items-center shadow-lg">
+          <div className="flex items-center gap-3">
+              <div className="p-2 bg-white/10 rounded-lg"><Layers size={20}/></div>
+              <div>
+                  <p className="text-xs text-slate-300 uppercase font-bold tracking-wider">Disponibilidade Total (Estoque + A Caminho)</p>
+                  <p className="text-lg font-bold">{grandTotal} peças</p>
+              </div>
+          </div>
+          <div className="text-right hidden sm:block">
+              <p className="text-xs text-slate-400">Projeção de Inventário</p>
+          </div>
       </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        {/* Card Valor */}
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+            <div className="flex justify-between items-center">
+                <div>
+                    <p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Valor em Estoque</p>
+                    <h3 className="text-xl font-bold text-slate-800">R$ {totalValueStock.toFixed(2)}</h3>
+                </div>
+                <div className="p-3 bg-blue-50 rounded-lg text-blue-600"><DollarSign size={20} /></div>
+            </div>
+        </div>
+
+        {/* Card Estoque Físico */}
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+            <div className="flex justify-between items-center">
+                <div>
+                    <p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Em Estoque (Físico)</p>
+                    <h3 className="text-xl font-bold text-slate-800">{totalStockItems} un</h3>
+                </div>
+                <div className="p-3 bg-purple-50 rounded-lg text-purple-600"><Package size={20} /></div>
+            </div>
+        </div>
+
+        {/* Card Alerta */}
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+            <div className="flex justify-between items-center">
+                <div>
+                    <p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Alerta Estoque (Esgotados)</p>
+                    <h3 className="text-xl font-bold text-red-600">{lowStockCount} itens</h3>
+                </div>
+                <div className="p-3 bg-red-50 rounded-lg text-red-600"><AlertTriangle size={20} /></div>
+            </div>
+        </div>
+
+        {/* Card A Caminho (Atualizado) */}
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+            <div className="flex justify-between items-center">
+                <div>
+                    <p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Chegando (A Caminho)</p>
+                    <h3 className="text-xl font-bold text-indigo-600">{pendingPieces} peças</h3>
+                    <p className="text-xs text-slate-400 mt-1">em {pendingOrdersCount} pedidos</p>
+                </div>
+                <div className="p-3 bg-indigo-50 rounded-lg text-indigo-600"><Truck size={20} /></div>
+            </div>
+        </div>
+      </div>
+
       <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 h-96">
          <h3 className="text-lg font-semibold mb-4 text-slate-700">Evolução de Vendas (Mensal)</h3>
          <ResponsiveContainer width="100%" height="100%"><LineChart data={salesData}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" /><XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} /><YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} /><Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} /><Line type="monotone" dataKey="vendas" stroke="#2563eb" strokeWidth={3} dot={{ r: 4, fill: '#2563eb', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} /></LineChart></ResponsiveContainer>
