@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   LayoutDashboard, 
   Package, 
@@ -28,8 +28,7 @@ import {
   Palette,
   Pencil,
   History,
-  Search,
-  Layers // Novo ícone para o total geral
+  Search
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -83,7 +82,6 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// Tentativa de persistência offline segura
 try {
     enableIndexedDbPersistence(db).catch((err) => {
         if (err.code == 'failed-precondition') {
@@ -93,7 +91,7 @@ try {
         }
     });
 } catch (e) {
-    console.log("Persistência já habilitada ou erro não crítico.");
+    console.log("Erro ao iniciar persistencia", e);
 }
 
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
@@ -341,6 +339,21 @@ const RankingDashboard = ({ transactions }) => {
     }
   });
 
+  // Novos Cálculos de Totais (Mantendo apenas contagem)
+  const totalSalesCount = sales.length;
+
+  // Dados para o Gráfico Comparativo (Ano Todo)
+  const yearlyComparisonData = useMemo(() => {
+     if (rankMonth !== 'Ano Todo') return [];
+     return MONTHS.map((m, index) => {
+        const count = sales.filter(t => {
+            const d = new Date(t.date + 'T12:00:00');
+            return d.getMonth() === index;
+        }).length;
+        return { name: m.substring(0,3), vendas: count };
+     });
+  }, [sales, rankMonth]);
+
   const modelCounts = sales.reduce((acc, curr) => {
     const model = curr.productModel || 'Outros';
     acc[model] = (acc[model] || 0) + 1;
@@ -404,31 +417,61 @@ const RankingDashboard = ({ transactions }) => {
           </div>
       </div>
 
+      {/* Cards de Contagem de Vendas (Apenas Quantidade) */}
+      <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm flex items-center justify-between">
+        <div>
+            <p className="text-sm text-slate-500 font-medium mb-1">Total de Vendas ({rankMonth === 'Ano Todo' ? rankYear : rankMonth})</p>
+            <p className="text-3xl font-bold text-slate-800">{totalSalesCount} <span className="text-sm font-normal text-slate-400">itens</span></p>
+        </div>
+        <div className="bg-blue-50 p-3 rounded-xl text-blue-600 shadow-sm">
+            <ShoppingBag size={24} />
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 h-96">
           <h3 className="text-lg font-semibold mb-4 text-slate-700 flex items-center gap-2">
-             Modelos Mais Vendidos
+             {rankMonth === 'Ano Todo' ? 'Comparativo Mensal de Vendas' : 'Modelos Mais Vendidos'}
              <span className="text-xs font-normal text-slate-400 ml-auto bg-slate-50 px-2 py-1 rounded">
                 {rankMonth === 'Ano Todo' ? rankYear : `${rankMonth}/${rankYear}`}
              </span>
           </h3>
           <ResponsiveContainer width="100%" height="85%">
-            {topModelsData.length > 0 ? (
-                <BarChart data={topModelsData} layout="vertical" margin={{ left: 40 }}>
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                <XAxis type="number" hide />
-                <YAxis type="category" dataKey="name" width={100} tick={{fontSize: 12}} />
-                <Tooltip cursor={{fill: '#f1f5f9'}} />
-                <Bar dataKey="value" fill="#2563eb" radius={[0, 4, 4, 0]}>
-                    {topModelsData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={BAR_COLORS[index % BAR_COLORS.length]} />
-                    ))}
-                </Bar>
-                </BarChart>
+            {/* Lógica Condicional do Gráfico */}
+            {rankMonth === 'Ano Todo' ? (
+                // GRÁFICO COMPARATIVO MENSAL
+                 yearlyComparisonData.reduce((acc, curr) => acc + curr.vendas, 0) > 0 ? (
+                    <BarChart data={yearlyComparisonData}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} />
+                        <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} />
+                        <Tooltip cursor={{fill: '#f1f5f9'}} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                        <Bar dataKey="vendas" fill="#3b82f6" radius={[4, 4, 0, 0]} name="Vendas" />
+                    </BarChart>
+                 ) : (
+                    <div className="flex items-center justify-center h-full text-slate-400 text-sm">
+                        Sem vendas registradas neste ano.
+                    </div>
+                 )
             ) : (
-                <div className="flex items-center justify-center h-full text-slate-400 text-sm">
-                    Sem vendas neste período.
-                </div>
+                // GRÁFICO DE MODELOS MAIS VENDIDOS (Antigo)
+                topModelsData.length > 0 ? (
+                    <BarChart data={topModelsData} layout="vertical" margin={{ left: 40 }}>
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                    <XAxis type="number" hide />
+                    <YAxis type="category" dataKey="name" width={100} tick={{fontSize: 12}} />
+                    <Tooltip cursor={{fill: '#f1f5f9'}} />
+                    <Bar dataKey="value" fill="#2563eb" radius={[0, 4, 4, 0]}>
+                        {topModelsData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={BAR_COLORS[index % BAR_COLORS.length]} />
+                        ))}
+                    </Bar>
+                    </BarChart>
+                ) : (
+                    <div className="flex items-center justify-center h-full text-slate-400 text-sm">
+                        Sem vendas neste mês.
+                    </div>
+                )
             )}
           </ResponsiveContainer>
         </div>
@@ -928,88 +971,22 @@ const OrdersManager = ({ orders, user, inventory }) => {
 
 const Dashboard = ({ inventory, transactions, orders }) => {
   const totalValueStock = inventory.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0);
-  const totalStockItems = inventory.reduce((acc, i) => acc + i.quantity, 0); // Total de itens já em estoque
   const lowStockCount = inventory.filter(i => i.quantity === 0).length; // Corrigido para esgotados (0)
-  
-  // Lógica corrigida para contar PEÇAS e não apenas pedidos
-  const activeOrdersList = orders ? orders.filter(o => o.status !== 'Entregue') : [];
-  const pendingPieces = activeOrdersList.reduce((acc, curr) => acc + (Number(curr.quantity) || 0), 0);
-  const pendingOrdersCount = activeOrdersList.length;
-  
-  // Total Geral: Estoque Físico + O que está chegando
-  const grandTotal = totalStockItems + pendingPieces;
-
+  const pendingOrders = orders ? orders.filter(o => o.status !== 'Entregue').length : 0;
   const salesByMonth = transactions.filter(t => t.type === 'income').reduce((acc, curr) => {
       const month = new Date(curr.date).getMonth();
       acc[month] = (acc[month] || 0) + curr.amount;
       return acc;
     }, {});
   const salesData = MONTHS.map((m, i) => ({ name: m.substring(0, 3), vendas: salesByMonth[i] || 0 })).slice(0, new Date().getMonth() + 1);
-  
   return (
     <div className="space-y-6 animate-fade-in">
-      
-      {/* Barra de Total Geral (Nova funcionalidade) */}
-      <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-xl p-4 text-white flex justify-between items-center shadow-lg">
-          <div className="flex items-center gap-3">
-              <div className="p-2 bg-white/10 rounded-lg"><Layers size={20}/></div>
-              <div>
-                  <p className="text-xs text-slate-300 uppercase font-bold tracking-wider">Disponibilidade Total (Estoque + A Caminho)</p>
-                  <p className="text-lg font-bold">{grandTotal} peças</p>
-              </div>
-          </div>
-          <div className="text-right hidden sm:block">
-              <p className="text-xs text-slate-400">Projeção de Inventário</p>
-          </div>
-      </div>
-
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        {/* Card Valor */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-            <div className="flex justify-between items-center">
-                <div>
-                    <p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Valor em Estoque</p>
-                    <h3 className="text-xl font-bold text-slate-800">R$ {totalValueStock.toFixed(2)}</h3>
-                </div>
-                <div className="p-3 bg-blue-50 rounded-lg text-blue-600"><DollarSign size={20} /></div>
-            </div>
-        </div>
-
-        {/* Card Estoque Físico */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-            <div className="flex justify-between items-center">
-                <div>
-                    <p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Em Estoque (Físico)</p>
-                    <h3 className="text-xl font-bold text-slate-800">{totalStockItems} un</h3>
-                </div>
-                <div className="p-3 bg-purple-50 rounded-lg text-purple-600"><Package size={20} /></div>
-            </div>
-        </div>
-
-        {/* Card Alerta */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-            <div className="flex justify-between items-center">
-                <div>
-                    <p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Alerta Estoque (Esgotados)</p>
-                    <h3 className="text-xl font-bold text-red-600">{lowStockCount} itens</h3>
-                </div>
-                <div className="p-3 bg-red-50 rounded-lg text-red-600"><AlertTriangle size={20} /></div>
-            </div>
-        </div>
-
-        {/* Card A Caminho (Atualizado) */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-            <div className="flex justify-between items-center">
-                <div>
-                    <p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Chegando (A Caminho)</p>
-                    <h3 className="text-xl font-bold text-indigo-600">{pendingPieces} peças</h3>
-                    <p className="text-xs text-slate-400 mt-1">em {pendingOrdersCount} pedidos</p>
-                </div>
-                <div className="p-3 bg-indigo-50 rounded-lg text-indigo-600"><Truck size={20} /></div>
-            </div>
-        </div>
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Valor em Estoque</p><h3 className="text-xl font-bold text-slate-800">R$ {totalValueStock.toFixed(2)}</h3></div><div className="p-3 bg-blue-50 rounded-lg text-blue-600"><DollarSign size={20} /></div></div></div>
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Total Peças</p><h3 className="text-xl font-bold text-slate-800">{inventory.reduce((acc, i) => acc + i.quantity, 0)} un</h3></div><div className="p-3 bg-purple-50 rounded-lg text-purple-600"><Package size={20} /></div></div></div>
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Alerta Estoque (Esgotados)</p><h3 className="text-xl font-bold text-red-600">{lowStockCount} itens</h3></div><div className="p-3 bg-red-50 rounded-lg text-red-600"><AlertTriangle size={20} /></div></div></div>
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Pedidos Andamento</p><h3 className="text-xl font-bold text-indigo-600">{pendingOrders} pedidos</h3></div><div className="p-3 bg-indigo-50 rounded-lg text-indigo-600"><Truck size={20} /></div></div></div>
       </div>
-
       <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 h-96">
          <h3 className="text-lg font-semibold mb-4 text-slate-700">Evolução de Vendas (Mensal)</h3>
          <ResponsiveContainer width="100%" height="100%"><LineChart data={salesData}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" /><XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} /><YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} /><Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} /><Line type="monotone" dataKey="vendas" stroke="#2563eb" strokeWidth={3} dot={{ r: 4, fill: '#2563eb', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} /></LineChart></ResponsiveContainer>
