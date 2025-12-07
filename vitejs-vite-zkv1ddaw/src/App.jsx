@@ -972,7 +972,10 @@ const OrdersManager = ({ orders, user, inventory }) => {
 const Dashboard = ({ inventory, transactions, orders }) => {
   const totalValueStock = inventory.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0);
   const lowStockCount = inventory.filter(i => i.quantity === 0).length; // Corrigido para esgotados (0)
-  const pendingOrders = orders ? orders.filter(o => o.status !== 'Entregue').length : 0;
+  
+  // Mantém a soma da quantidade de itens (quantity) ao invés de contar pedidos
+  const pendingItems = orders ? orders.filter(o => o.status !== 'Entregue').reduce((acc, curr) => acc + (Number(curr.quantity) || 0), 0) : 0;
+
   const salesByMonth = transactions.filter(t => t.type === 'income').reduce((acc, curr) => {
       const month = new Date(curr.date).getMonth();
       acc[month] = (acc[month] || 0) + curr.amount;
@@ -985,7 +988,7 @@ const Dashboard = ({ inventory, transactions, orders }) => {
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Valor em Estoque</p><h3 className="text-xl font-bold text-slate-800">R$ {totalValueStock.toFixed(2)}</h3></div><div className="p-3 bg-blue-50 rounded-lg text-blue-600"><DollarSign size={20} /></div></div></div>
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Total Peças</p><h3 className="text-xl font-bold text-slate-800">{inventory.reduce((acc, i) => acc + i.quantity, 0)} un</h3></div><div className="p-3 bg-purple-50 rounded-lg text-purple-600"><Package size={20} /></div></div></div>
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Alerta Estoque (Esgotados)</p><h3 className="text-xl font-bold text-red-600">{lowStockCount} itens</h3></div><div className="p-3 bg-red-50 rounded-lg text-red-600"><AlertTriangle size={20} /></div></div></div>
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Pedidos Andamento</p><h3 className="text-xl font-bold text-indigo-600">{pendingOrders} pedidos</h3></div><div className="p-3 bg-indigo-50 rounded-lg text-indigo-600"><Truck size={20} /></div></div></div>
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Pedidos em Andamento</p><h3 className="text-xl font-bold text-indigo-600">{pendingItems} itens</h3></div><div className="p-3 bg-indigo-50 rounded-lg text-indigo-600"><Truck size={20} /></div></div></div>
       </div>
       <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 h-96">
          <h3 className="text-lg font-semibold mb-4 text-slate-700">Evolução de Vendas (Mensal)</h3>
@@ -999,23 +1002,84 @@ const FinancialManager = ({ transactions, user }) => {
   const [selectedMonthIndex, setSelectedMonthIndex] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [newTrans, setNewTrans] = useState({ description: '', amount: '', type: 'income', category: 'Masculino', method: 'Pix', size: 'M', channel: 'Loja Física' });
+  const [editingId, setEditingId] = useState(null); // Novo estado para controlar edição
+
   const filteredTransactions = transactions.filter(t => { const tDate = new Date(t.date + 'T12:00:00'); return tDate.getMonth() === selectedMonthIndex && tDate.getFullYear() === selectedYear; });
   const totals = filteredTransactions.reduce((acc, curr) => { if (curr.type === 'income') { acc.income += curr.amount; } else { acc.expense += curr.amount; } return acc; }, { income: 0, expense: 0 });
   const balance = totals.income - totals.expense;
-  const handleAddTransaction = async () => {
+
+  // Função unificada para Salvar (Criar ou Editar)
+  const handleSaveTransaction = async () => {
       if (!newTrans.description || !newTrans.amount || !user) return;
+      
       const today = new Date();
       let day = 1;
+      // Se estiver editando, mantém a data original se possível, ou usa a lógica de data atual se for mês corrente
       if (today.getMonth() === selectedMonthIndex && today.getFullYear() === selectedYear) { day = today.getDate(); }
+      
       const year = selectedYear;
       const monthStr = (selectedMonthIndex + 1).toString().padStart(2, '0');
       const dayStr = day.toString().padStart(2, '0');
-      const transactionData = { description: newTrans.description, amount: Number(newTrans.amount), type: newTrans.type, category: newTrans.category || 'Geral', method: newTrans.method, date: `${year}-${monthStr}-${dayStr}`, createdAt: Date.now() };
-      if (newTrans.type === 'income') { transactionData.productModel = newTrans.description; transactionData.productSize = newTrans.size; transactionData.channel = newTrans.channel; }
-      try { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'transactions'), transactionData); setNewTrans({ ...newTrans, description: '', amount: '' }); } catch (error) { console.error("Erro ao adicionar transação:", error); }
+      
+      // Prepara os dados
+      const transactionData = { 
+          description: newTrans.description, 
+          amount: Number(newTrans.amount), 
+          type: newTrans.type, 
+          category: newTrans.category || 'Geral', 
+          method: newTrans.method || 'Pix',
+          // Se for edição, tentamos manter a data original se ela não for alterada explicitamente (aqui simplificado para manter a data do mês selecionado)
+          date: editingId ? transactions.find(t => t.id === editingId)?.date : `${year}-${monthStr}-${dayStr}`
+      };
+      
+      if (newTrans.type === 'income') { 
+          transactionData.productModel = newTrans.description; 
+          transactionData.productSize = newTrans.size; 
+          transactionData.channel = newTrans.channel; 
+      }
+
+      try {
+          if (editingId) {
+              // ATUALIZAR
+              await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', editingId), transactionData);
+              alert('Transação atualizada com sucesso!');
+          } else {
+              // CRIAR NOVO
+              await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'transactions'), {
+                  ...transactionData,
+                  createdAt: Date.now()
+              });
+          }
+          
+          // Resetar formulário
+          handleCancelEdit();
+      } catch (error) { 
+          console.error("Erro ao salvar transação:", error); 
+          alert("Erro ao salvar.");
+      }
   };
+
+  const handleEdit = (t) => {
+      setNewTrans({
+          description: t.description,
+          amount: t.amount,
+          type: t.type,
+          category: t.category || (t.type === 'income' ? 'Masculino' : 'Contas'),
+          method: t.method || 'Pix',
+          size: t.productSize || 'M',
+          channel: t.channel || 'Loja Física'
+      });
+      setEditingId(t.id);
+  };
+
+  const handleCancelEdit = () => {
+      setNewTrans({ description: '', amount: '', type: 'income', category: 'Masculino', method: 'Pix', size: 'M', channel: 'Loja Física' });
+      setEditingId(null);
+  };
+
   const handleDelete = async (id) => { if(window.confirm("Deletar transação?") && user) { try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', id)); } catch (e) { console.error("Erro", e); } } }
   const handleFinancialCategoryChange = (e) => { const cat = e.target.value; if (SIZES[cat]) { setNewTrans({...newTrans, category: cat, size: SIZES[cat][0]}); } else { setNewTrans({...newTrans, category: cat}); } };
+  
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="bg-white rounded-t-xl border-x border-t border-slate-200 shadow-sm">
@@ -1028,24 +1092,54 @@ const FinancialManager = ({ transactions, user }) => {
           <div className={`p-6 rounded-xl shadow-sm border ${balance >= 0 ? 'bg-blue-50 border-blue-100' : 'bg-red-50 border-red-100'}`}><p className={`text-sm font-medium ${balance >= 0 ? 'text-blue-600' : 'text-red-600'}`}>Saldo Líquido</p><p className={`text-2xl font-bold ${balance >= 0 ? 'text-blue-700' : 'text-red-700'}`}>R$ {balance.toFixed(2)}</p></div>
       </div>
       <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
-        <div className="flex justify-between items-center mb-3"><h3 className="text-sm font-bold text-slate-700">{newTrans.type === 'income' ? 'Registrar Venda' : 'Registrar Despesa'} <span className="text-slate-400 font-normal">({selectedYear})</span></h3><div className="flex bg-white rounded-lg border border-slate-200 p-1"><button onClick={() => setNewTrans({...newTrans, type: 'income', category: 'Masculino'})} className={`px-3 py-1 text-xs font-bold rounded ${newTrans.type === 'income' ? 'bg-emerald-100 text-emerald-600' : 'text-slate-500'}`}>Venda</button><button onClick={() => setNewTrans({...newTrans, type: 'expense', category: 'Contas'})} className={`px-3 py-1 text-xs font-bold rounded ${newTrans.type === 'expense' ? 'bg-red-100 text-red-600' : 'text-slate-500'}`}>Despesa</button></div></div>
+        <div className="flex justify-between items-center mb-3">
+            <h3 className="text-sm font-bold text-slate-700">
+                {editingId ? 'Editar Lançamento' : (newTrans.type === 'income' ? 'Registrar Venda' : 'Registrar Despesa')} 
+                <span className="text-slate-400 font-normal"> ({selectedYear})</span>
+            </h3>
+            <div className="flex gap-2">
+                {editingId && (
+                    <button onClick={handleCancelEdit} className="px-3 py-1 text-xs font-bold rounded bg-slate-200 text-slate-600 hover:bg-slate-300 transition-colors flex items-center gap-1">
+                        <X size={12}/> Cancelar
+                    </button>
+                )}
+                <div className="flex bg-white rounded-lg border border-slate-200 p-1">
+                    <button onClick={() => setNewTrans({...newTrans, type: 'income', category: 'Masculino'})} disabled={!!editingId} className={`px-3 py-1 text-xs font-bold rounded transition-colors ${newTrans.type === 'income' ? 'bg-emerald-100 text-emerald-600' : 'text-slate-500 hover:bg-slate-50'} ${editingId ? 'opacity-50 cursor-not-allowed' : ''}`}>Venda</button>
+                    <button onClick={() => setNewTrans({...newTrans, type: 'expense', category: 'Contas'})} disabled={!!editingId} className={`px-3 py-1 text-xs font-bold rounded transition-colors ${newTrans.type === 'expense' ? 'bg-red-100 text-red-600' : 'text-slate-500 hover:bg-slate-50'} ${editingId ? 'opacity-50 cursor-not-allowed' : ''}`}>Despesa</button>
+                </div>
+            </div>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
             <div className="md:col-span-2"><label className="text-xs text-slate-500 block mb-1">{newTrans.type === 'income' ? 'Modelo / Produto' : 'Descrição'}</label><input type="text" value={newTrans.description} onChange={e => setNewTrans({...newTrans, description: e.target.value})} className="w-full p-2 rounded border border-slate-300 text-sm" placeholder={newTrans.type === 'income' ? "Ex: Camiseta Polo Azul" : "Ex: Conta de Luz"}/></div>
             {newTrans.type === 'income' && (<><div><label className="text-xs text-slate-500 block mb-1">Gênero</label><select value={newTrans.category} onChange={handleFinancialCategoryChange} className="w-full p-2 rounded border border-slate-300 text-sm"><option value="Masculino">Masculino</option><option value="Feminino">Feminino</option><option value="Infantil">Infantil</option></select></div><div><label className="text-xs text-slate-500 block mb-1">Tamanho</label><select value={newTrans.size} onChange={e => setNewTrans({...newTrans, size: e.target.value})} className="w-full p-2 rounded border border-slate-300 text-sm">{(SIZES[newTrans.category] || SIZES['Masculino']).map(size => (<option key={size} value={size}>{size}</option>))}</select></div><div><label className="text-xs text-slate-500 block mb-1">Canal</label><select value={newTrans.channel} onChange={e => setNewTrans({...newTrans, channel: e.target.value})} className="w-full p-2 rounded border border-slate-300 text-sm"><option value="Loja Física">Loja Física</option><option value="Online">Online</option></select></div></>)}
             {newTrans.type === 'expense' && (<div className="md:col-span-3"><label className="text-xs text-slate-500 block mb-1">Categoria</label><select value={newTrans.category} onChange={e => setNewTrans({...newTrans, category: e.target.value})} className="w-full p-2 rounded border border-slate-300 text-sm"><option>Contas</option><option>Fornecedor</option><option>Funcionários</option><option>Outros</option></select></div>)}
             <div className="md:col-span-1"><label className="text-xs text-slate-500 block mb-1">Valor</label><input type="number" value={newTrans.amount} onChange={e => setNewTrans({...newTrans, amount: e.target.value})} className="w-full p-2 rounded border border-slate-300 text-sm" placeholder="0.00"/></div>
-            <div className="md:col-span-1"><button onClick={handleAddTransaction} className="w-full bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-blue-700 h-[38px] flex items-center justify-center"><Plus size={18} /></button></div>
+            <div className="md:col-span-1">
+                <button onClick={handleSaveTransaction} className={`w-full text-white px-4 py-2 rounded text-sm font-medium h-[38px] flex items-center justify-center gap-2 transition-colors ${editingId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-blue-600 hover:bg-blue-700'}`}>
+                    {editingId ? <Save size={18}/> : <Plus size={18} />}
+                    {editingId ? 'Salvar' : ''}
+                </button>
+            </div>
         </div>
       </div>
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-          <table className="w-full text-left"><thead className="bg-slate-50 border-b border-slate-200"><tr><th className="p-4 text-xs font-semibold text-slate-500 uppercase">Data</th><th className="p-4 text-xs font-semibold text-slate-500 uppercase">Descrição</th><th className="p-4 text-xs font-semibold text-slate-500 uppercase text-right">Valor</th><th className="p-4 w-10"></th></tr></thead>
+          <table className="w-full text-left"><thead className="bg-slate-50 border-b border-slate-200"><tr><th className="p-4 text-xs font-semibold text-slate-500 uppercase">Data</th><th className="p-4 text-xs font-semibold text-slate-500 uppercase">Descrição</th><th className="p-4 text-xs font-semibold text-slate-500 uppercase text-right">Valor</th><th className="p-4 w-24 text-right">Ações</th></tr></thead>
               <tbody className="divide-y divide-slate-100">
                   {filteredTransactions.length > 0 ? filteredTransactions.map(t => (
                       <tr key={t.id} className="hover:bg-slate-50 group">
                           <td className="p-4 text-sm text-slate-600">{t.date}</td>
                           <td className="p-4 text-sm font-medium text-slate-800">{t.description}<div className="flex gap-1 mt-1"><span className="px-2 py-0.5 rounded-full bg-slate-100 text-[10px] text-slate-500 uppercase">{t.category}</span>{t.type === 'income' && t.productSize && (<span className="px-2 py-0.5 rounded-full bg-indigo-50 text-[10px] text-indigo-500 font-bold border border-indigo-100">{t.productSize}</span>)}{t.type === 'income' && t.channel && (<span className="px-2 py-0.5 rounded-full bg-emerald-50 text-[10px] text-emerald-600 border border-emerald-100">{t.channel}</span>)}</div></td>
                           <td className={`p-4 text-sm font-bold text-right ${t.type === 'income' ? 'text-emerald-600' : 'text-red-600'}`}>{t.type === 'income' ? '+' : '-'} R$ {t.amount.toFixed(2)}</td>
-                          <td className="p-4"><button onClick={() => handleDelete(t.id)} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"><Trash2 size={14} /></button></td>
+                          <td className="p-4 text-right">
+                              <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                                  <button onClick={() => handleEdit(t)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Editar">
+                                      <Pencil size={16} />
+                                  </button>
+                                  <button onClick={() => handleDelete(t.id)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors" title="Excluir">
+                                      <Trash2 size={16} />
+                                  </button>
+                              </div>
+                          </td>
                       </tr>
                   )) : (<tr><td colSpan="5" className="p-8 text-center text-slate-400 text-sm">Nenhuma movimentação neste mês de {selectedYear}.</td></tr>)}
               </tbody>
