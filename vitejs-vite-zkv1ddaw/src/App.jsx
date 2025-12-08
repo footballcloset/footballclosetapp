@@ -29,7 +29,7 @@ import {
   Pencil,
   History,
   Search,
-  RotateCcw // Novo ícone para restaurar
+  RotateCcw
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -95,8 +95,6 @@ try {
     console.log("Erro ao iniciar persistencia", e);
 }
 
-// CORREÇÃO AQUI: Voltando para o ID que estava sendo usado nas versões anteriores
-// Isso deve restaurar o acesso aos seus dados.
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 // --- ÍCONES CUSTOMIZADOS ---
@@ -280,7 +278,6 @@ const SettingsManager = ({ config, user, inventory, transactions, orders, copaTr
 
             {activeTab === 'visual' ? (
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                    {/* ... (Conteúdo de Configuração Visual Mantido) ... */}
                     <div className="flex items-center gap-2 mb-6 border-b border-slate-100 pb-4">
                         <div className="bg-slate-100 p-2 rounded-lg">
                             <Palette size={24} className="text-slate-700" />
@@ -482,9 +479,8 @@ const RankingDashboard = ({ transactions }) => {
     }
   });
 
-  // ... (Resto do RankingDashboard Mantido igual) ...
-  // Novos Cálculos de Totais (Mantendo apenas contagem)
-  const totalSalesCount = sales.length;
+  // Cálculos de Totais (Quantidade)
+  const totalSalesCount = sales.length; // Conta cada venda lançada como 1
 
   // Dados para o Gráfico Comparativo (Ano Todo)
   const yearlyComparisonData = useMemo(() => {
@@ -559,6 +555,18 @@ const RankingDashboard = ({ transactions }) => {
                 <Calendar className="absolute left-3 top-2.5 text-slate-400" size={14} />
              </div>
           </div>
+      </div>
+
+      <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm flex items-center justify-between">
+            <div className="flex items-center gap-4">
+                 <div className="bg-blue-100 p-3 rounded-full text-blue-600">
+                     <ShoppingBag size={24} />
+                 </div>
+                 <div>
+                    <p className="text-sm text-slate-500 font-medium mb-1">Total Itens Vendidos ({rankMonth === 'Ano Todo' ? rankYear : rankMonth})</p>
+                    <p className="text-3xl font-bold text-slate-800">{totalSalesCount} <span className="text-lg font-normal text-slate-400">unidades</span></p>
+                </div>
+            </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -691,7 +699,9 @@ const Dashboard = ({ inventory, transactions, orders }) => {
   const totalValueStock = activeInventory.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0);
   const lowStockCount = activeInventory.filter(i => i.quantity === 0).length;
   
-  const pendingOrders = activeOrders ? activeOrders.filter(o => o.status !== 'Entregue').length : 0;
+  // CORREÇÃO SOLICITADA:
+  // pendingItems calcula a soma da quantidade de todos os pedidos em aberto.
+  // A exibição foi ajustada para mostrar apenas esta contagem.
   const pendingItems = activeOrders ? activeOrders.filter(o => o.status !== 'Entregue').reduce((acc, curr) => acc + (Number(curr.quantity) || 0), 0) : 0;
 
   const salesByMonth = activeTransactions.filter(t => t.type === 'income').reduce((acc, curr) => {
@@ -707,7 +717,10 @@ const Dashboard = ({ inventory, transactions, orders }) => {
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Valor em Estoque</p><h3 className="text-xl font-bold text-slate-800">R$ {totalValueStock.toFixed(2)}</h3></div><div className="p-3 bg-blue-50 rounded-lg text-blue-600"><DollarSign size={20} /></div></div></div>
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Total Peças</p><h3 className="text-xl font-bold text-slate-800">{activeInventory.reduce((acc, i) => acc + i.quantity, 0)} un</h3></div><div className="p-3 bg-purple-50 rounded-lg text-purple-600"><Package size={20} /></div></div></div>
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Alerta Estoque (Esgotados)</p><h3 className="text-xl font-bold text-red-600">{lowStockCount} itens</h3></div><div className="p-3 bg-red-50 rounded-lg text-red-600"><AlertTriangle size={20} /></div></div></div>
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Pedidos Andamento</p><h3 className="text-xl font-bold text-indigo-600">{pendingOrders} pedidos ({pendingItems} itens)</h3></div><div className="p-3 bg-indigo-50 rounded-lg text-indigo-600"><Truck size={20} /></div></div></div>
+        
+        {/* CARD ALTERADO CONFORME PEDIDO */}
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Pedidos Andamento</p><h3 className="text-xl font-bold text-indigo-600">{pendingItems} itens</h3></div><div className="p-3 bg-indigo-50 rounded-lg text-indigo-600"><Truck size={20} /></div></div></div>
+      
       </div>
       <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 h-96">
          <h3 className="text-lg font-semibold mb-4 text-slate-700">Evolução de Vendas (Mensal)</h3>
