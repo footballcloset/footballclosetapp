@@ -28,7 +28,8 @@ import {
   Palette,
   Pencil,
   History,
-  Search
+  Search,
+  RotateCcw // Novo ícone para restaurar
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -94,7 +95,9 @@ try {
     console.log("Erro ao iniciar persistencia", e);
 }
 
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'football-closet-default';
+// CORREÇÃO AQUI: Voltando para o ID que estava sendo usado nas versões anteriores
+// Isso deve restaurar o acesso aos seus dados.
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 // --- ÍCONES CUSTOMIZADOS ---
 
@@ -214,10 +217,11 @@ const LoginScreen = ({ onLogin, loading, config }) => {
   );
 };
 
-// --- CONFIGURAÇÕES ---
-const SettingsManager = ({ config, user }) => {
+// --- CONFIGURAÇÕES & LIXEIRA ---
+const SettingsManager = ({ config, user, inventory, transactions, orders, copaTransactions }) => {
     const [localConfig, setLocalConfig] = useState(config);
     const [saving, setSaving] = useState(false);
+    const [activeTab, setActiveTab] = useState('visual'); // visual | trash
 
     useEffect(() => {
         setLocalConfig(config);
@@ -237,107 +241,224 @@ const SettingsManager = ({ config, user }) => {
         }
     };
 
+    // Função genérica para restaurar item (soft delete undo)
+    const handleRestore = async (collectionName, id) => {
+        if (!user) return;
+        try {
+            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', collectionName, id), { deleted: false });
+            alert("Item restaurado com sucesso!");
+        } catch (e) {
+            console.error("Erro ao restaurar:", e);
+            alert("Erro ao restaurar item.");
+        }
+    };
+
+    // Filtrar itens deletados
+    const deletedInventory = inventory.filter(i => i.deleted);
+    const deletedTransactions = transactions.filter(t => t.deleted);
+    const deletedOrders = orders.filter(o => o.deleted);
+    const deletedCopa = copaTransactions.filter(c => c.deleted);
+
     return (
         <div className="space-y-6 animate-fade-in max-w-4xl mx-auto">
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                <div className="flex items-center gap-2 mb-6 border-b border-slate-100 pb-4">
-                    <div className="bg-slate-100 p-2 rounded-lg">
-                        <Palette size={24} className="text-slate-700" />
-                    </div>
-                    <h2 className="text-xl font-bold text-slate-800">Identidade Visual da Loja</h2>
-                </div>
+            
+            {/* Navegação Interna */}
+            <div className="flex bg-slate-100 p-1 rounded-lg w-fit mb-6 border border-slate-200">
+                <button
+                    onClick={() => setActiveTab('visual')}
+                    className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${activeTab === 'visual' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                    Identidade Visual
+                </button>
+                <button
+                    onClick={() => setActiveTab('trash')}
+                    className={`px-4 py-2 text-sm font-medium rounded-md transition-all flex items-center gap-2 ${activeTab === 'trash' ? 'bg-white text-red-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                    <Trash2 size={16} /> Lixeira / Recuperação
+                </button>
+            </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div className="space-y-4">
-                        <div>
-                            <label className="block text-sm font-bold text-slate-700 mb-2">Nome da Loja</label>
-                            <input 
-                                type="text" 
-                                value={localConfig.name}
-                                onChange={(e) => setLocalConfig({...localConfig, name: e.target.value})}
-                                className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-400 outline-none"
-                            />
+            {activeTab === 'visual' ? (
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                    {/* ... (Conteúdo de Configuração Visual Mantido) ... */}
+                    <div className="flex items-center gap-2 mb-6 border-b border-slate-100 pb-4">
+                        <div className="bg-slate-100 p-2 rounded-lg">
+                            <Palette size={24} className="text-slate-700" />
                         </div>
-
-                        <div>
-                            <label className="block text-sm font-bold text-slate-700 mb-2">URL da Logo</label>
-                            <input 
-                                type="text" 
-                                value={localConfig.logoUrl}
-                                onChange={(e) => setLocalConfig({...localConfig, logoUrl: e.target.value})}
-                                className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-400 outline-none text-sm"
-                                placeholder="Cole o link da imagem"
-                            />
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-sm font-bold text-slate-700 mb-2">Cor do Menu</label>
-                                <div className="flex items-center gap-2">
-                                    <input 
-                                        type="color" 
-                                        value={localConfig.sidebarColor}
-                                        onChange={(e) => setLocalConfig({...localConfig, sidebarColor: e.target.value})}
-                                        className="h-10 w-full rounded cursor-pointer border-none p-0"
-                                    />
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-bold text-slate-700 mb-2">Fundo da Logo</label>
-                                <div className="flex items-center gap-2">
-                                    <input 
-                                        type="color" 
-                                        value={localConfig.logoBgColor}
-                                        onChange={(e) => setLocalConfig({...localConfig, logoBgColor: e.target.value})}
-                                        className="h-10 w-full rounded cursor-pointer border-none p-0"
-                                    />
-                                </div>
-                            </div>
-                        </div>
+                        <h2 className="text-xl font-bold text-slate-800">Identidade Visual da Loja</h2>
                     </div>
 
-                    <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 flex flex-col items-center justify-center text-center">
-                        <h3 className="text-sm font-bold text-slate-400 mb-4 uppercase tracking-wide">Pré-visualização</h3>
-                        
-                        <div 
-                            className="w-64 rounded-xl shadow-xl overflow-hidden flex flex-col"
-                            style={{ backgroundColor: '#f8fafc' }}
-                        >
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-2">Nome da Loja</label>
+                                <input 
+                                    type="text" 
+                                    value={localConfig.name}
+                                    onChange={(e) => setLocalConfig({...localConfig, name: e.target.value})}
+                                    className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-400 outline-none"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-2">URL da Logo</label>
+                                <input 
+                                    type="text" 
+                                    value={localConfig.logoUrl}
+                                    onChange={(e) => setLocalConfig({...localConfig, logoUrl: e.target.value})}
+                                    className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-400 outline-none text-sm"
+                                    placeholder="Cole o link da imagem"
+                                />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-700 mb-2">Cor do Menu</label>
+                                    <div className="flex items-center gap-2">
+                                        <input 
+                                            type="color" 
+                                            value={localConfig.sidebarColor}
+                                            onChange={(e) => setLocalConfig({...localConfig, sidebarColor: e.target.value})}
+                                            className="h-10 w-full rounded cursor-pointer border-none p-0"
+                                        />
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-700 mb-2">Fundo da Logo</label>
+                                    <div className="flex items-center gap-2">
+                                        <input 
+                                            type="color" 
+                                            value={localConfig.logoBgColor}
+                                            onChange={(e) => setLocalConfig({...localConfig, logoBgColor: e.target.value})}
+                                            className="h-10 w-full rounded cursor-pointer border-none p-0"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 flex flex-col items-center justify-center text-center">
+                            <h3 className="text-sm font-bold text-slate-400 mb-4 uppercase tracking-wide">Pré-visualização</h3>
                             <div 
-                                className="p-4 text-white flex flex-col items-center gap-2"
-                                style={{ backgroundColor: localConfig.sidebarColor }}
+                                className="w-64 rounded-xl shadow-xl overflow-hidden flex flex-col"
+                                style={{ backgroundColor: '#f8fafc' }}
                             >
                                 <div 
-                                    className="p-2 rounded-lg shadow-sm"
-                                    style={{ backgroundColor: localConfig.logoBgColor }}
+                                    className="p-4 text-white flex flex-col items-center gap-2"
+                                    style={{ backgroundColor: localConfig.sidebarColor }}
                                 >
-                                    <img 
-                                        src={localConfig.logoUrl} 
-                                        alt="Preview" 
-                                        className="h-8 w-8 object-contain"
-                                        onError={(e) => {e.target.onerror = null; e.target.src="https://via.placeholder.com/50?text=FC"}}
-                                    />
+                                    <div 
+                                        className="p-2 rounded-lg shadow-sm"
+                                        style={{ backgroundColor: localConfig.logoBgColor }}
+                                    >
+                                        <img 
+                                            src={localConfig.logoUrl} 
+                                            alt="Preview" 
+                                            className="h-8 w-8 object-contain"
+                                            onError={(e) => {e.target.onerror = null; e.target.src="https://via.placeholder.com/50?text=FC"}}
+                                        />
+                                    </div>
+                                    <span className="font-bold text-sm">{localConfig.name}</span>
                                 </div>
-                                <span className="font-bold text-sm">{localConfig.name}</span>
-                            </div>
-                            <div className="p-4 bg-white flex-1 min-h-[100px] flex items-center justify-center text-slate-300 text-xs">
-                                Conteúdo da Aplicação...
+                                <div className="p-4 bg-white flex-1 min-h-[100px] flex items-center justify-center text-slate-300 text-xs">
+                                    Conteúdo da Aplicação...
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
 
-                <div className="mt-8 flex justify-end">
-                    <button 
-                        onClick={handleSave}
-                        disabled={saving}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-3 rounded-xl font-bold shadow-lg shadow-emerald-100 flex items-center gap-2 transition-all active:scale-95"
-                    >
-                        <Save size={20} />
-                        {saving ? 'Salvando...' : 'Salvar Alterações'}
-                    </button>
+                    <div className="mt-8 flex justify-end">
+                        <button 
+                            onClick={handleSave}
+                            disabled={saving}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-3 rounded-xl font-bold shadow-lg shadow-emerald-100 flex items-center gap-2 transition-all active:scale-95"
+                        >
+                            <Save size={20} />
+                            {saving ? 'Salvando...' : 'Salvar Alterações'}
+                        </button>
+                    </div>
                 </div>
-            </div>
+            ) : (
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                    <div className="flex items-center gap-2 mb-6 border-b border-slate-100 pb-4">
+                        <div className="bg-red-50 p-2 rounded-lg">
+                            <Trash2 size={24} className="text-red-600" />
+                        </div>
+                        <div>
+                            <h2 className="text-xl font-bold text-slate-800">Itens Excluídos</h2>
+                            <p className="text-xs text-slate-500">Restaure itens que foram removidos acidentalmente.</p>
+                        </div>
+                    </div>
+
+                    <div className="space-y-8">
+                        {/* Seção Estoque */}
+                        {deletedInventory.length > 0 && (
+                            <div>
+                                <h3 className="font-bold text-slate-700 mb-2">Estoque ({deletedInventory.length})</h3>
+                                <div className="bg-slate-50 rounded-lg border border-slate-200 divide-y divide-slate-200">
+                                    {deletedInventory.map(item => (
+                                        <div key={item.id} className="p-3 flex justify-between items-center">
+                                            <span className="text-sm text-slate-600">{item.name} <span className="text-slate-400">({item.size})</span></span>
+                                            <button onClick={() => handleRestore('inventory', item.id)} className="text-blue-600 hover:text-blue-800 text-xs font-bold flex items-center gap-1"><RotateCcw size={14}/> Restaurar</button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Seção Financeiro */}
+                        {deletedTransactions.length > 0 && (
+                            <div>
+                                <h3 className="font-bold text-slate-700 mb-2">Financeiro ({deletedTransactions.length})</h3>
+                                <div className="bg-slate-50 rounded-lg border border-slate-200 divide-y divide-slate-200">
+                                    {deletedTransactions.map(item => (
+                                        <div key={item.id} className="p-3 flex justify-between items-center">
+                                            <span className="text-sm text-slate-600">{item.description} - R$ {item.amount}</span>
+                                            <button onClick={() => handleRestore('transactions', item.id)} className="text-blue-600 hover:text-blue-800 text-xs font-bold flex items-center gap-1"><RotateCcw size={14}/> Restaurar</button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Seção Pedidos */}
+                        {deletedOrders.length > 0 && (
+                            <div>
+                                <h3 className="font-bold text-slate-700 mb-2">Pedidos ({deletedOrders.length})</h3>
+                                <div className="bg-slate-50 rounded-lg border border-slate-200 divide-y divide-slate-200">
+                                    {deletedOrders.map(item => (
+                                        <div key={item.id} className="p-3 flex justify-between items-center">
+                                            <span className="text-sm text-slate-600">Pedido: {item.model} ({item.status})</span>
+                                            <button onClick={() => handleRestore('orders', item.id)} className="text-blue-600 hover:text-blue-800 text-xs font-bold flex items-center gap-1"><RotateCcw size={14}/> Restaurar</button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Seção Copa */}
+                        {deletedCopa.length > 0 && (
+                            <div>
+                                <h3 className="font-bold text-slate-700 mb-2">Copa do Mundo ({deletedCopa.length})</h3>
+                                <div className="bg-slate-50 rounded-lg border border-slate-200 divide-y divide-slate-200">
+                                    {deletedCopa.map(item => (
+                                        <div key={item.id} className="p-3 flex justify-between items-center">
+                                            <span className="text-sm text-slate-600">{item.description} - R$ {item.amount}</span>
+                                            <button onClick={() => handleRestore('copa_transactions', item.id)} className="text-blue-600 hover:text-blue-800 text-xs font-bold flex items-center gap-1"><RotateCcw size={14}/> Restaurar</button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {deletedInventory.length === 0 && deletedTransactions.length === 0 && deletedOrders.length === 0 && deletedCopa.length === 0 && (
+                            <div className="text-center p-8 text-slate-400 italic">
+                                A lixeira está vazia.
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
@@ -348,7 +469,9 @@ const RankingDashboard = ({ transactions }) => {
   const [rankYear, setRankYear] = useState(new Date().getFullYear());
   const [rankMonth, setRankMonth] = useState('Ano Todo');
 
+  // FILTRO SOFT DELETE
   const sales = transactions.filter(t => {
+    if (t.deleted) return false; // Ignora deletados
     if (t.type !== 'income') return false; 
     const tDate = new Date(t.date + 'T12:00:00'); 
     const isSameYear = tDate.getFullYear() === rankYear;
@@ -359,6 +482,7 @@ const RankingDashboard = ({ transactions }) => {
     }
   });
 
+  // ... (Resto do RankingDashboard Mantido igual) ...
   // Novos Cálculos de Totais (Mantendo apenas contagem)
   const totalSalesCount = sales.length;
 
@@ -557,13 +681,49 @@ const RankingDashboard = ({ transactions }) => {
   );
 };
 
+// --- DASHBOARD ---
+const Dashboard = ({ inventory, transactions, orders }) => {
+  // FILTROS SOFT DELETE (Ignorar itens deletados)
+  const activeInventory = inventory.filter(i => !i.deleted);
+  const activeOrders = orders.filter(o => !o.deleted);
+  const activeTransactions = transactions.filter(t => !t.deleted);
+
+  const totalValueStock = activeInventory.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0);
+  const lowStockCount = activeInventory.filter(i => i.quantity === 0).length;
+  
+  const pendingOrders = activeOrders ? activeOrders.filter(o => o.status !== 'Entregue').length : 0;
+  const pendingItems = activeOrders ? activeOrders.filter(o => o.status !== 'Entregue').reduce((acc, curr) => acc + (Number(curr.quantity) || 0), 0) : 0;
+
+  const salesByMonth = activeTransactions.filter(t => t.type === 'income').reduce((acc, curr) => {
+      const month = new Date(curr.date).getMonth();
+      acc[month] = (acc[month] || 0) + curr.amount;
+      return acc;
+    }, {});
+  const salesData = MONTHS.map((m, i) => ({ name: m.substring(0, 3), vendas: salesByMonth[i] || 0 })).slice(0, new Date().getMonth() + 1);
+  
+  return (
+    <div className="space-y-6 animate-fade-in">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Valor em Estoque</p><h3 className="text-xl font-bold text-slate-800">R$ {totalValueStock.toFixed(2)}</h3></div><div className="p-3 bg-blue-50 rounded-lg text-blue-600"><DollarSign size={20} /></div></div></div>
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Total Peças</p><h3 className="text-xl font-bold text-slate-800">{activeInventory.reduce((acc, i) => acc + i.quantity, 0)} un</h3></div><div className="p-3 bg-purple-50 rounded-lg text-purple-600"><Package size={20} /></div></div></div>
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Alerta Estoque (Esgotados)</p><h3 className="text-xl font-bold text-red-600">{lowStockCount} itens</h3></div><div className="p-3 bg-red-50 rounded-lg text-red-600"><AlertTriangle size={20} /></div></div></div>
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Pedidos Andamento</p><h3 className="text-xl font-bold text-indigo-600">{pendingOrders} pedidos ({pendingItems} itens)</h3></div><div className="p-3 bg-indigo-50 rounded-lg text-indigo-600"><Truck size={20} /></div></div></div>
+      </div>
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 h-96">
+         <h3 className="text-lg font-semibold mb-4 text-slate-700">Evolução de Vendas (Mensal)</h3>
+         <ResponsiveContainer width="100%" height="100%"><LineChart data={salesData}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" /><XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} /><YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} /><Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} /><Line type="monotone" dataKey="vendas" stroke="#2563eb" strokeWidth={3} dot={{ r: 4, fill: '#2563eb', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} /></LineChart></ResponsiveContainer>
+      </div>
+    </div>
+  );
+};
+
 // --- GESTÃO DE ESTOQUE (StockManager) ---
 const StockManager = ({ inventory, user }) => {
     const [newItem, setNewItem] = useState({ name: '', category: 'Masculino', size: 'M', quantity: 0, price: 0 });
     const [showForm, setShowForm] = useState(false);
     const [editingId, setEditingId] = useState(null);
     const [filterCategory, setFilterCategory] = useState('Todos');
-    const [searchTerm, setSearchTerm] = useState(''); // Estado para a busca
+    const [searchTerm, setSearchTerm] = useState('');
 
     const handleCategoryChange = (e) => { const newCategory = e.target.value; setNewItem({ ...newItem, category: newCategory, size: SIZES[newCategory][0] }); };
     
@@ -596,7 +756,9 @@ const StockManager = ({ inventory, user }) => {
             });
             alert('Produto atualizado com sucesso!');
         } else {
+            // Verifica se existe mas NÃO está deletado
             const existingItem = inventory.find(item => 
+                !item.deleted &&
                 item.name.trim().toLowerCase() === nameToCompare && 
                 item.category === newItem.category && 
                 item.size === newItem.size
@@ -614,6 +776,7 @@ const StockManager = ({ inventory, user }) => {
                     quantity: Number(newItem.quantity),
                     price: Number(newItem.price),
                     isClearance: false,
+                    deleted: false, // Flag padrão
                     createdAt: Date.now()
                 });
             }
@@ -630,9 +793,10 @@ const StockManager = ({ inventory, user }) => {
     };
 
     const handleDelete = async (id) => { 
-        if (window.confirm('Tem certeza que deseja excluir este item?') && user) { 
+        if (window.confirm('Mover este item para a lixeira?') && user) { 
             try { 
-                await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'inventory', id)); 
+                // SOFT DELETE: Apenas marca como deletado
+                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'inventory', id), { deleted: true }); 
             } catch (error) { 
                 console.error("Erro ao excluir:", error); 
                 alert("Erro ao excluir item.");
@@ -646,15 +810,18 @@ const StockManager = ({ inventory, user }) => {
         if (item.isClearance) { await updateDoc(itemRef, { isClearance: false, price: item.originalPrice || item.price }); } else { await updateDoc(itemRef, { isClearance: true, originalPrice: item.price, price: Number((item.price * 0.7).toFixed(2)) }); }
     };
 
+    // Filtra removendo os deletados
+    const activeInventory = inventory.filter(i => !i.deleted);
+
     const counts = {
-        masculino: inventory.filter(i => i.category === 'Masculino').reduce((acc, i) => acc + i.quantity, 0),
-        feminino: inventory.filter(i => i.category === 'Feminino').reduce((acc, i) => acc + i.quantity, 0),
-        infantil: inventory.filter(i => i.category === 'Infantil').reduce((acc, i) => acc + i.quantity, 0),
-        queima: inventory.filter(i => i.isClearance).reduce((acc, i) => acc + i.quantity, 0),
+        masculino: activeInventory.filter(i => i.category === 'Masculino').reduce((acc, i) => acc + i.quantity, 0),
+        feminino: activeInventory.filter(i => i.category === 'Feminino').reduce((acc, i) => acc + i.quantity, 0),
+        infantil: activeInventory.filter(i => i.category === 'Infantil').reduce((acc, i) => acc + i.quantity, 0),
+        queima: activeInventory.filter(i => i.isClearance).reduce((acc, i) => acc + i.quantity, 0),
     };
 
     // Lógica de Filtragem e Ordenação
-    const filteredInventory = inventory
+    const filteredInventory = activeInventory
         .filter(item => {
             // Filtro por Categoria
             if (filterCategory === 'Todos') return true;
@@ -671,7 +838,7 @@ const StockManager = ({ inventory, user }) => {
     return (
         <div className="space-y-6 animate-fade-in">
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4"> 
-            <button onClick={() => setFilterCategory('Todos')} className={`p-4 rounded-xl border transition-all ${filterCategory === 'Todos' ? 'bg-slate-800 text-white border-slate-800 shadow-md' : 'bg-white border-slate-200 hover:border-slate-300 text-slate-600'}`}><span className="block font-bold text-xl">{inventory.reduce((acc, i) => acc + i.quantity, 0)}</span><span className="text-xs uppercase tracking-wider opacity-70 flex items-center gap-2 justify-center"><Filter size={12}/> Todos</span></button>
+            <button onClick={() => setFilterCategory('Todos')} className={`p-4 rounded-xl border transition-all ${filterCategory === 'Todos' ? 'bg-slate-800 text-white border-slate-800 shadow-md' : 'bg-white border-slate-200 hover:border-slate-300 text-slate-600'}`}><span className="block font-bold text-xl">{activeInventory.reduce((acc, i) => acc + i.quantity, 0)}</span><span className="text-xs uppercase tracking-wider opacity-70 flex items-center gap-2 justify-center"><Filter size={12}/> Todos</span></button>
             <button onClick={() => setFilterCategory('Masculino')} className={`p-4 rounded-xl border transition-all ${filterCategory === 'Masculino' ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-200' : 'bg-white border-blue-100 text-blue-600 hover:bg-blue-50'}`}><span className="block font-bold text-xl">{counts.masculino}</span><span className="text-xs uppercase tracking-wider opacity-70">Masculino</span></button>
             <button onClick={() => setFilterCategory('Feminino')} className={`p-4 rounded-xl border transition-all ${filterCategory === 'Feminino' ? 'bg-pink-600 text-white border-pink-600 shadow-md shadow-pink-200' : 'bg-white border-pink-100 text-pink-600 hover:bg-pink-50'}`}><span className="block font-bold text-xl">{counts.feminino}</span><span className="text-xs uppercase tracking-wider opacity-70">Feminino</span></button>
             <button onClick={() => setFilterCategory('Infantil')} className={`p-4 rounded-xl border transition-all ${filterCategory === 'Infantil' ? 'bg-orange-500 text-white border-orange-500 shadow-md shadow-orange-200' : 'bg-white border-orange-100 text-orange-600 hover:bg-orange-50'}`}><span className="block font-bold text-xl">{counts.infantil}</span><span className="text-xs uppercase tracking-wider opacity-70">Infantil</span></button>
@@ -708,6 +875,7 @@ const StockManager = ({ inventory, user }) => {
             </div>
         </div>
 
+        {/* ... (Formulário igual, apenas lógica handleDelete alterada acima) ... */}
         {showForm && (
             <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 animate-slide-down">
                 <div className="mb-4">
@@ -725,6 +893,7 @@ const StockManager = ({ inventory, user }) => {
             </button>
             </div>
         )}
+
         <div className="overflow-x-auto bg-white rounded-xl shadow-sm border border-slate-200">
             <table className="w-full text-left border-collapse"><thead className="bg-slate-50 border-b border-slate-200 text-slate-600"><tr><th className="p-4 font-semibold text-sm">Produto</th><th className="p-4 font-semibold text-sm">Categoria</th><th className="p-4 font-semibold text-sm">Tamanho</th><th className="p-4 font-semibold text-sm">Quantidade</th><th className="p-4 font-semibold text-sm">Preço Unit.</th><th className="p-4 font-semibold text-sm text-right">Ações</th></tr></thead>
             <tbody>
@@ -740,7 +909,6 @@ const StockManager = ({ inventory, user }) => {
                     <td className="p-4 font-bold">{item.quantity}</td>
                     <td className="p-4">{item.isClearance ? (<div><span className="line-through text-slate-400 text-xs">R$ {item.originalPrice?.toFixed(2)}</span><div className="text-orange-600 font-bold">R$ {item.price.toFixed(2)}</div></div>) : (<span>R$ {item.price.toFixed(2)}</span>)}</td>
                     <td className="p-4 text-right flex justify-end gap-2">
-                        {/* Botão de Editar */}
                         <button onClick={() => handleEdit(item)} className="p-2 text-slate-400 hover:text-blue-600 transition-colors" title="Editar"><Pencil size={18} /></button>
                         <button onClick={() => handleToggleClearance(item)} title="Queima de Estoque" className={`p-2 rounded-full transition-colors ${item.isClearance ? 'bg-orange-100 text-orange-600' : 'text-slate-300 hover:bg-orange-50 hover:text-orange-500'}`}><Flame size={18} /></button>
                         <button onClick={() => handleDelete(item.id)} className="p-2 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={18} /></button>
@@ -769,17 +937,19 @@ const OrdersManager = ({ orders, user, inventory }) => {
   });
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null); 
-  const [view, setView] = useState('active'); // 'active' | 'history'
+  const [view, setView] = useState('active'); 
   
   const statusPriority = { 'Retido na Alfândega': 1, 'Pedido Realizado': 2, 'Enviado': 3, 'Em Trânsito Nacional': 4, 'Liberado Alfândega': 5, 'Entregue': 6 };
   
-  const sortedOrders = [...orders].sort((a, b) => {
+  // FILTRO SOFT DELETE
+  const activeOrders = orders.filter(o => !o.deleted);
+
+  const sortedOrders = [...activeOrders].sort((a, b) => {
     const priorityA = statusPriority[a.status] || 99;
     const priorityB = statusPriority[b.status] || 99;
     return priorityA - priorityB;
   });
   
-  // Filtragem por aba
   const displayedOrders = view === 'active' 
     ? sortedOrders.filter(o => o.status !== 'Entregue')
     : sortedOrders.filter(o => o.status === 'Entregue');
@@ -800,29 +970,28 @@ const OrdersManager = ({ orders, user, inventory }) => {
 
   // Função que adiciona o produto ao estoque automaticamente
   const addToStock = async (orderData) => {
+      // (Lógica addToStock mantida igual)
       const nameToCompare = orderData.model.trim().toLowerCase();
-      
-      // Busca se já existe no estoque
       const existingItem = inventory.find(item => 
+          !item.deleted && // Garante não somar a item deletado
           item.name.trim().toLowerCase() === nameToCompare && 
           item.category === orderData.category && 
           item.size === orderData.size
       );
 
       if (existingItem) {
-        // Se existe, soma
         const itemRef = doc(db, 'artifacts', appId, 'public', 'data', 'inventory', existingItem.id);
         const newQuantity = Number(existingItem.quantity) + Number(orderData.quantity);
         await updateDoc(itemRef, { quantity: newQuantity });
       } else {
-        // Se não, cria (Preço inicial 0 para ser editado depois)
         await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'inventory'), {
             name: orderData.model.trim(),
             category: orderData.category,
             size: orderData.size,
             quantity: Number(orderData.quantity),
-            price: 0, // Preço de venda a ser definido no estoque
+            price: 0, 
             isClearance: false,
+            deleted: false,
             createdAt: Date.now()
         });
       }
@@ -833,26 +1002,24 @@ const OrdersManager = ({ orders, user, inventory }) => {
     
     try {
       let shouldAddToStock = false;
-
       if (newOrder.status === 'Entregue') {
           if (!editingId) {
-              shouldAddToStock = true; // Novo pedido criado já como entregue
+              shouldAddToStock = true;
           } else {
               const oldOrder = orders.find(o => o.id === editingId);
               if (oldOrder && oldOrder.status !== 'Entregue') {
-                  shouldAddToStock = true; // Mudou de status para entregue
+                  shouldAddToStock = true;
               }
           }
       }
 
       if (editingId) {
-        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'orders', editingId), {
-            ...newOrder
-        });
+        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'orders', editingId), { ...newOrder });
         alert('Pedido atualizado com sucesso!');
       } else {
         await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'orders'), {
             ...newOrder,
+            deleted: false,
             createdAt: Date.now()
         });
       }
@@ -861,8 +1028,6 @@ const OrdersManager = ({ orders, user, inventory }) => {
           await addToStock(newOrder);
           alert("Produto adicionado ao estoque automaticamente!");
       }
-      
-      // Reset
       setNewOrder({ date: '', model: '', supplier: '', status: 'Pedido Realizado', category: 'Masculino', size: 'M', quantity: 1 });
       setEditingId(null);
       setShowForm(false);
@@ -873,85 +1038,42 @@ const OrdersManager = ({ orders, user, inventory }) => {
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm('Remover este pedido?') && user) {
-      try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'orders', id)); } catch (error) { console.error("Erro ao deletar:", error); }
+    if (window.confirm('Mover pedido para a lixeira?') && user) {
+      try { 
+          // SOFT DELETE
+          await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'orders', id), { deleted: true }); 
+      } catch (error) { console.error("Erro ao deletar:", error); }
     }
   };
   
-  const handleCategoryChange = (e) => {
-    const newCategory = e.target.value;
-    setNewOrder({ 
-        ...newOrder, 
-        category: newCategory, 
-        size: SIZES[newCategory][0] 
-    });
-  };
-
-  const getStatusColor = (status) => {
-    switch(status) {
-      case 'Retido na Alfândega': return 'bg-red-100 text-red-700 border-red-200';
-      case 'Enviado': return 'bg-blue-100 text-blue-700 border-blue-200';
-      case 'Entregue': return 'bg-emerald-100 text-emerald-700 border-emerald-200';
-      default: return 'bg-slate-100 text-slate-700 border-slate-200';
-    }
-  };
+  const handleCategoryChange = (e) => { const newCategory = e.target.value; setNewOrder({ ...newOrder, category: newCategory, size: SIZES[newCategory][0] }); };
+  const getStatusColor = (status) => { switch(status) { case 'Retido na Alfândega': return 'bg-red-100 text-red-700 border-red-200'; case 'Enviado': return 'bg-blue-100 text-blue-700 border-blue-200'; case 'Entregue': return 'bg-emerald-100 text-emerald-700 border-emerald-200'; default: return 'bg-slate-100 text-slate-700 border-slate-200'; } };
 
   return (
     <div className="space-y-6 animate-fade-in">
-      
-      {/* Abas de Navegação Pedidos */}
       <div className="flex bg-slate-100 p-1 rounded-lg w-fit mb-4 border border-slate-200">
-          <button
-             onClick={() => setView('active')}
-             className={`px-4 py-2 text-sm font-medium rounded-md transition-all flex items-center gap-2 ${view === 'active' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-          >
-              <Truck size={16} /> Pedidos em Andamento
-          </button>
-          <button
-             onClick={() => setView('history')}
-             className={`px-4 py-2 text-sm font-medium rounded-md transition-all flex items-center gap-2 ${view === 'history' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-          >
-              <History size={16} /> Histórico de Entregas
-          </button>
+          <button onClick={() => setView('active')} className={`px-4 py-2 text-sm font-medium rounded-md transition-all flex items-center gap-2 ${view === 'active' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}><Truck size={16} /> Pedidos em Andamento</button>
+          <button onClick={() => setView('history')} className={`px-4 py-2 text-sm font-medium rounded-md transition-all flex items-center gap-2 ${view === 'history' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}><History size={16} /> Histórico de Entregas</button>
       </div>
 
       <div className="flex justify-between items-center">
-        <h2 className="text-xl font-bold text-slate-800">
-            {view === 'active' ? 'Acompanhamento' : 'Pedidos Entregues'}
-        </h2>
-        <button 
-          onClick={() => {
-              setEditingId(null);
-              setNewOrder({ date: '', model: '', supplier: '', status: 'Pedido Realizado', category: 'Masculino', size: 'M', quantity: 1 });
-              setShowForm(!showForm);
-          }} 
-          className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg transition-colors shadow-sm"
-        >
-          {showForm ? <X size={18}/> : <Plus size={18}/>}
-          {showForm ? 'Cancelar' : 'Novo Pedido'}
-        </button>
+        <h2 className="text-xl font-bold text-slate-800">{view === 'active' ? 'Acompanhamento' : 'Pedidos Entregues'}</h2>
+        <button onClick={() => { setEditingId(null); setNewOrder({ date: '', model: '', supplier: '', status: 'Pedido Realizado', category: 'Masculino', size: 'M', quantity: 1 }); setShowForm(!showForm); }} className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg transition-colors shadow-sm">{showForm ? <X size={18}/> : <Plus size={18}/>}{showForm ? 'Cancelar' : 'Novo Pedido'}</button>
       </div>
       
       {showForm && (
         <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 animate-slide-down">
-            <div className="mb-4">
-                <h3 className="text-lg font-bold text-slate-700">{editingId ? 'Editar Pedido' : 'Adicionar Pedido'}</h3>
-            </div>
-          {/* Nova Ordem do Formulário */}
+            <div className="mb-4"><h3 className="text-lg font-bold text-slate-700">{editingId ? 'Editar Pedido' : 'Adicionar Pedido'}</h3></div>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
             <div><label className="block text-sm font-medium text-slate-700 mb-1">Data do Pedido</label><input type="date" value={newOrder.date} onChange={e => setNewOrder({...newOrder, date: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-slate-800 outline-none"/></div>
             <div className="md:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-1">Modelo/Produto</label><input type="text" value={newOrder.model} onChange={e => setNewOrder({...newOrder, model: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-slate-800 outline-none" placeholder="Ex: 50 Camisas Polo"/></div>
             <div><label className="block text-sm font-medium text-slate-700 mb-1">Categoria</label><select value={newOrder.category} onChange={handleCategoryChange} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-slate-800 outline-none"><option value="Masculino">Masculino</option><option value="Feminino">Feminino</option><option value="Infantil">Infantil</option></select></div>
-            
             <div><label className="block text-sm font-medium text-slate-700 mb-1">Tamanho</label><select value={newOrder.size} onChange={e => setNewOrder({...newOrder, size: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-slate-800 outline-none">{SIZES[newOrder.category || 'Masculino'].map(size => (<option key={size} value={size}>{size}</option>))}</select></div>
             <div><label className="block text-sm font-medium text-slate-700 mb-1">Qtd.</label><input type="number" value={newOrder.quantity} onChange={e => setNewOrder({...newOrder, quantity: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-slate-800 outline-none"/></div>
             <div className="md:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-1">Fornecedor</label><input type="text" value={newOrder.supplier} onChange={e => setNewOrder({...newOrder, supplier: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-slate-800 outline-none" placeholder="Ex: Fábrica SP"/></div>
-            
             <div><label className="block text-sm font-medium text-slate-700 mb-1">Status</label><select value={newOrder.status} onChange={e => setNewOrder({...newOrder, status: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-slate-800 outline-none"><option>Pedido Realizado</option><option>Enviado</option><option>Retido na Alfândega</option><option>Liberado Alfândega</option><option>Em Trânsito Nacional</option><option>Entregue</option></select></div>
           </div>
-          <button onClick={handleSaveOrder} className="mt-4 bg-slate-900 text-white px-6 py-2 rounded hover:bg-slate-800">
-            {editingId ? 'Atualizar Pedido' : 'Salvar Pedido'}
-          </button>
+          <button onClick={handleSaveOrder} className="mt-4 bg-slate-900 text-white px-6 py-2 rounded hover:bg-slate-800">{editingId ? 'Atualizar Pedido' : 'Salvar Pedido'}</button>
         </div>
       )}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -959,13 +1081,8 @@ const OrdersManager = ({ orders, user, inventory }) => {
           <tbody className="divide-y divide-slate-100">
             {displayedOrders.map((order) => (
               <tr key={order.id} className="hover:bg-slate-50"><td className="p-4 text-sm text-slate-600">{order.date}</td><td className="p-4 text-sm font-medium text-slate-800">{order.model}</td>
-              <td className="p-4 text-sm text-slate-600">
-                  <span className="block text-xs font-bold">{order.category} - {order.size}</span>
-                  <span className="text-xs text-slate-400">{order.quantity} un.</span>
-              </td>
-              <td className="p-4 text-sm text-slate-600">{order.supplier}</td><td className="p-4"><span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(order.status)}`}>{order.status}</span></td>
+              <td className="p-4 text-sm text-slate-600"><span className="block text-xs font-bold">{order.category} - {order.size}</span><span className="text-xs text-slate-400">{order.quantity} un.</span></td><td className="p-4 text-sm text-slate-600">{order.supplier}</td><td className="p-4"><span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(order.status)}`}>{order.status}</span></td>
               <td className="p-4 text-right flex justify-end gap-2">
-                  {/* Botão Editar Pedido */}
                   <button onClick={() => handleEdit(order)} className="p-2 text-slate-400 hover:text-blue-600 transition-colors" title="Editar"><Pencil size={18} /></button>
                   <button onClick={() => handleDelete(order.id)} className="p-2 text-slate-400 hover:text-red-500 transition-colors"><Trash2 size={18} /></button>
               </td></tr>
@@ -978,112 +1095,56 @@ const OrdersManager = ({ orders, user, inventory }) => {
   );
 };
 
-const Dashboard = ({ inventory, transactions, orders }) => {
-  const totalValueStock = inventory.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0);
-  const lowStockCount = inventory.filter(i => i.quantity === 0).length; // Corrigido para esgotados (0)
-  const pendingOrders = orders ? orders.filter(o => o.status !== 'Entregue').length : 0;
-  const salesByMonth = transactions.filter(t => t.type === 'income').reduce((acc, curr) => {
-      const month = new Date(curr.date).getMonth();
-      acc[month] = (acc[month] || 0) + curr.amount;
-      return acc;
-    }, {});
-  const salesData = MONTHS.map((m, i) => ({ name: m.substring(0, 3), vendas: salesByMonth[i] || 0 })).slice(0, new Date().getMonth() + 1);
-  return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Valor em Estoque</p><h3 className="text-xl font-bold text-slate-800">R$ {totalValueStock.toFixed(2)}</h3></div><div className="p-3 bg-blue-50 rounded-lg text-blue-600"><DollarSign size={20} /></div></div></div>
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Total Peças</p><h3 className="text-xl font-bold text-slate-800">{inventory.reduce((acc, i) => acc + i.quantity, 0)} un</h3></div><div className="p-3 bg-purple-50 rounded-lg text-purple-600"><Package size={20} /></div></div></div>
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Alerta Estoque (Esgotados)</p><h3 className="text-xl font-bold text-red-600">{lowStockCount} itens</h3></div><div className="p-3 bg-red-50 rounded-lg text-red-600"><AlertTriangle size={20} /></div></div></div>
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Pedidos Andamento</p><h3 className="text-xl font-bold text-indigo-600">{pendingOrders} pedidos</h3></div><div className="p-3 bg-indigo-50 rounded-lg text-indigo-600"><Truck size={20} /></div></div></div>
-      </div>
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 h-96">
-         <h3 className="text-lg font-semibold mb-4 text-slate-700">Evolução de Vendas (Mensal)</h3>
-         <ResponsiveContainer width="100%" height="100%"><LineChart data={salesData}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" /><XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} /><YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} /><Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} /><Line type="monotone" dataKey="vendas" stroke="#2563eb" strokeWidth={3} dot={{ r: 4, fill: '#2563eb', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} /></LineChart></ResponsiveContainer>
-      </div>
-    </div>
-  );
-};
-
 const FinancialManager = ({ transactions, user }) => {
   const [selectedMonthIndex, setSelectedMonthIndex] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [newTrans, setNewTrans] = useState({ description: '', amount: '', type: 'income', category: 'Masculino', method: 'Pix', size: 'M', channel: 'Loja Física' });
-  const [editingId, setEditingId] = useState(null); // Novo estado para controlar edição
+  const [editingId, setEditingId] = useState(null); 
 
-  const filteredTransactions = transactions.filter(t => { const tDate = new Date(t.date + 'T12:00:00'); return tDate.getMonth() === selectedMonthIndex && tDate.getFullYear() === selectedYear; });
+  // FILTRO SOFT DELETE
+  const activeTransactions = transactions.filter(t => !t.deleted);
+
+  const filteredTransactions = activeTransactions.filter(t => { const tDate = new Date(t.date + 'T12:00:00'); return tDate.getMonth() === selectedMonthIndex && tDate.getFullYear() === selectedYear; });
   const totals = filteredTransactions.reduce((acc, curr) => { if (curr.type === 'income') { acc.income += curr.amount; } else { acc.expense += curr.amount; } return acc; }, { income: 0, expense: 0 });
   const balance = totals.income - totals.expense;
 
-  // Função unificada para Salvar (Criar ou Editar)
   const handleSaveTransaction = async () => {
+      // (Lógica de save igual, só adicionando deleted: false no create)
       if (!newTrans.description || !newTrans.amount || !user) return;
-      
       const today = new Date();
       let day = 1;
-      // Se estiver editando, mantém a data original se possível, ou usa a lógica de data atual se for mês corrente
       if (today.getMonth() === selectedMonthIndex && today.getFullYear() === selectedYear) { day = today.getDate(); }
-      
       const year = selectedYear;
       const monthStr = (selectedMonthIndex + 1).toString().padStart(2, '0');
       const dayStr = day.toString().padStart(2, '0');
-      
-      // Prepara os dados
       const transactionData = { 
           description: newTrans.description, 
           amount: Number(newTrans.amount), 
           type: newTrans.type, 
           category: newTrans.category || 'Geral', 
           method: newTrans.method || 'Pix',
-          // Se for edição, tentamos manter a data original se ela não for alterada explicitamente (aqui simplificado para manter a data do mês selecionado)
           date: editingId ? transactions.find(t => t.id === editingId)?.date : `${year}-${monthStr}-${dayStr}`
       };
-      
-      if (newTrans.type === 'income') { 
-          transactionData.productModel = newTrans.description; 
-          transactionData.productSize = newTrans.size; 
-          transactionData.channel = newTrans.channel; 
-      }
+      if (newTrans.type === 'income') { transactionData.productModel = newTrans.description; transactionData.productSize = newTrans.size; transactionData.channel = newTrans.channel; }
 
       try {
-          if (editingId) {
-              // ATUALIZAR
-              await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', editingId), transactionData);
-              alert('Transação atualizada com sucesso!');
-          } else {
-              // CRIAR NOVO
-              await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'transactions'), {
-                  ...transactionData,
-                  createdAt: Date.now()
-              });
-          }
-          
-          // Resetar formulário
+          if (editingId) { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', editingId), transactionData); alert('Transação atualizada!'); } 
+          else { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'transactions'), { ...transactionData, deleted: false, createdAt: Date.now() }); }
           handleCancelEdit();
-      } catch (error) { 
-          console.error("Erro ao salvar transação:", error); 
-          alert("Erro ao salvar.");
-      }
+      } catch (error) { console.error("Erro", error); alert("Erro ao salvar."); }
   };
 
-  const handleEdit = (t) => {
-      setNewTrans({
-          description: t.description,
-          amount: t.amount,
-          type: t.type,
-          category: t.category || (t.type === 'income' ? 'Masculino' : 'Contas'),
-          method: t.method || 'Pix',
-          size: t.productSize || 'M',
-          channel: t.channel || 'Loja Física'
-      });
-      setEditingId(t.id);
+  const handleDelete = async (id) => { 
+      if(window.confirm("Mover para lixeira?") && user) { 
+          try { 
+              // SOFT DELETE
+              await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', id), { deleted: true }); 
+          } catch (e) { console.error("Erro", e); } 
+      } 
   };
 
-  const handleCancelEdit = () => {
-      setNewTrans({ description: '', amount: '', type: 'income', category: 'Masculino', method: 'Pix', size: 'M', channel: 'Loja Física' });
-      setEditingId(null);
-  };
-
-  const handleDelete = async (id) => { if(window.confirm("Deletar transação?") && user) { try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', id)); } catch (e) { console.error("Erro", e); } } }
+  const handleEdit = (t) => { setNewTrans({ description: t.description, amount: t.amount, type: t.type, category: t.category || (t.type === 'income' ? 'Masculino' : 'Contas'), method: t.method || 'Pix', size: t.productSize || 'M', channel: t.channel || 'Loja Física' }); setEditingId(t.id); };
+  const handleCancelEdit = () => { setNewTrans({ description: '', amount: '', type: 'income', category: 'Masculino', method: 'Pix', size: 'M', channel: 'Loja Física' }); setEditingId(null); };
   const handleFinancialCategoryChange = (e) => { const cat = e.target.value; if (SIZES[cat]) { setNewTrans({...newTrans, category: cat, size: SIZES[cat][0]}); } else { setNewTrans({...newTrans, category: cat}); } };
   
   return (
@@ -1098,34 +1159,13 @@ const FinancialManager = ({ transactions, user }) => {
           <div className={`p-6 rounded-xl shadow-sm border ${balance >= 0 ? 'bg-blue-50 border-blue-100' : 'bg-red-50 border-red-100'}`}><p className={`text-sm font-medium ${balance >= 0 ? 'text-blue-600' : 'text-red-600'}`}>Saldo Líquido</p><p className={`text-2xl font-bold ${balance >= 0 ? 'text-blue-700' : 'text-red-700'}`}>R$ {balance.toFixed(2)}</p></div>
       </div>
       <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
-        <div className="flex justify-between items-center mb-3">
-            <h3 className="text-sm font-bold text-slate-700">
-                {editingId ? 'Editar Lançamento' : (newTrans.type === 'income' ? 'Registrar Venda' : 'Registrar Despesa')} 
-                <span className="text-slate-400 font-normal"> ({selectedYear})</span>
-            </h3>
-            <div className="flex gap-2">
-                {editingId && (
-                    <button onClick={handleCancelEdit} className="px-3 py-1 text-xs font-bold rounded bg-slate-200 text-slate-600 hover:bg-slate-300 transition-colors flex items-center gap-1">
-                        <X size={12}/> Cancelar
-                    </button>
-                )}
-                <div className="flex bg-white rounded-lg border border-slate-200 p-1">
-                    <button onClick={() => setNewTrans({...newTrans, type: 'income', category: 'Masculino'})} disabled={!!editingId} className={`px-3 py-1 text-xs font-bold rounded transition-colors ${newTrans.type === 'income' ? 'bg-emerald-100 text-emerald-600' : 'text-slate-500 hover:bg-slate-50'} ${editingId ? 'opacity-50 cursor-not-allowed' : ''}`}>Venda</button>
-                    <button onClick={() => setNewTrans({...newTrans, type: 'expense', category: 'Contas'})} disabled={!!editingId} className={`px-3 py-1 text-xs font-bold rounded transition-colors ${newTrans.type === 'expense' ? 'bg-red-100 text-red-600' : 'text-slate-500 hover:bg-slate-50'} ${editingId ? 'opacity-50 cursor-not-allowed' : ''}`}>Despesa</button>
-                </div>
-            </div>
-        </div>
+        <div className="flex justify-between items-center mb-3"><h3 className="text-sm font-bold text-slate-700">{editingId ? 'Editar Lançamento' : (newTrans.type === 'income' ? 'Registrar Venda' : 'Registrar Despesa')} <span className="text-slate-400 font-normal">({selectedYear})</span></h3><div className="flex gap-2">{editingId && (<button onClick={handleCancelEdit} className="px-3 py-1 text-xs font-bold rounded bg-slate-200 text-slate-600 hover:bg-slate-300 transition-colors flex items-center gap-1"><X size={12}/> Cancelar</button>)}<div className="flex bg-white rounded-lg border border-slate-200 p-1"><button onClick={() => setNewTrans({...newTrans, type: 'income', category: 'Masculino'})} disabled={!!editingId} className={`px-3 py-1 text-xs font-bold rounded transition-colors ${newTrans.type === 'income' ? 'bg-emerald-100 text-emerald-600' : 'text-slate-500 hover:bg-slate-50'} ${editingId ? 'opacity-50 cursor-not-allowed' : ''}`}>Venda</button><button onClick={() => setNewTrans({...newTrans, type: 'expense', category: 'Contas'})} disabled={!!editingId} className={`px-3 py-1 text-xs font-bold rounded transition-colors ${newTrans.type === 'expense' ? 'bg-red-100 text-red-600' : 'text-slate-500 hover:bg-slate-50'} ${editingId ? 'opacity-50 cursor-not-allowed' : ''}`}>Despesa</button></div></div></div>
         <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
             <div className="md:col-span-2"><label className="text-xs text-slate-500 block mb-1">{newTrans.type === 'income' ? 'Modelo / Produto' : 'Descrição'}</label><input type="text" value={newTrans.description} onChange={e => setNewTrans({...newTrans, description: e.target.value})} className="w-full p-2 rounded border border-slate-300 text-sm" placeholder={newTrans.type === 'income' ? "Ex: Camiseta Polo Azul" : "Ex: Conta de Luz"}/></div>
             {newTrans.type === 'income' && (<><div><label className="text-xs text-slate-500 block mb-1">Gênero</label><select value={newTrans.category} onChange={handleFinancialCategoryChange} className="w-full p-2 rounded border border-slate-300 text-sm"><option value="Masculino">Masculino</option><option value="Feminino">Feminino</option><option value="Infantil">Infantil</option></select></div><div><label className="text-xs text-slate-500 block mb-1">Tamanho</label><select value={newTrans.size} onChange={e => setNewTrans({...newTrans, size: e.target.value})} className="w-full p-2 rounded border border-slate-300 text-sm">{(SIZES[newTrans.category] || SIZES['Masculino']).map(size => (<option key={size} value={size}>{size}</option>))}</select></div><div><label className="text-xs text-slate-500 block mb-1">Canal</label><select value={newTrans.channel} onChange={e => setNewTrans({...newTrans, channel: e.target.value})} className="w-full p-2 rounded border border-slate-300 text-sm"><option value="Loja Física">Loja Física</option><option value="Online">Online</option></select></div></>)}
             {newTrans.type === 'expense' && (<div className="md:col-span-3"><label className="text-xs text-slate-500 block mb-1">Categoria</label><select value={newTrans.category} onChange={e => setNewTrans({...newTrans, category: e.target.value})} className="w-full p-2 rounded border border-slate-300 text-sm"><option>Contas</option><option>Fornecedor</option><option>Funcionários</option><option>Outros</option></select></div>)}
             <div className="md:col-span-1"><label className="text-xs text-slate-500 block mb-1">Valor</label><input type="number" value={newTrans.amount} onChange={e => setNewTrans({...newTrans, amount: e.target.value})} className="w-full p-2 rounded border border-slate-300 text-sm" placeholder="0.00"/></div>
-            <div className="md:col-span-1">
-                <button onClick={handleSaveTransaction} className={`w-full text-white px-4 py-2 rounded text-sm font-medium h-[38px] flex items-center justify-center gap-2 transition-colors ${editingId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-blue-600 hover:bg-blue-700'}`}>
-                    {editingId ? <Save size={18}/> : <Plus size={18} />}
-                    {editingId ? 'Salvar' : ''}
-                </button>
-            </div>
+            <div className="md:col-span-1"><button onClick={handleSaveTransaction} className={`w-full text-white px-4 py-2 rounded text-sm font-medium h-[38px] flex items-center justify-center gap-2 transition-colors ${editingId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-blue-600 hover:bg-blue-700'}`}>{editingId ? <Save size={18}/> : <Plus size={18} />}{editingId ? 'Salvar' : ''}</button></div>
         </div>
       </div>
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -1138,12 +1178,8 @@ const FinancialManager = ({ transactions, user }) => {
                           <td className={`p-4 text-sm font-bold text-right ${t.type === 'income' ? 'text-emerald-600' : 'text-red-600'}`}>{t.type === 'income' ? '+' : '-'} R$ {t.amount.toFixed(2)}</td>
                           <td className="p-4 text-right">
                               <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                                  <button onClick={() => handleEdit(t)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Editar">
-                                      <Pencil size={16} />
-                                  </button>
-                                  <button onClick={() => handleDelete(t.id)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors" title="Excluir">
-                                      <Trash2 size={16} />
-                                  </button>
+                                  <button onClick={() => handleEdit(t)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Editar"><Pencil size={16} /></button>
+                                  <button onClick={() => handleDelete(t.id)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors" title="Excluir"><Trash2 size={16} /></button>
                               </div>
                           </td>
                       </tr>
@@ -1157,234 +1193,80 @@ const FinancialManager = ({ transactions, user }) => {
 
 // --- NOVA ABA: GESTÃO COPA DO MUNDO ---
 const CopaManager = ({ transactions, user }) => {
-    // Estado atualizado para incluir todos os campos necessários
-    const [newItem, setNewItem] = useState({ 
-        description: '', 
-        amount: '', 
-        type: 'income',
-        category: 'Masculino', // Padrão inicial
-        size: 'M',
-        channel: 'Loja Física'
-    });
+    const [newItem, setNewItem] = useState({ description: '', amount: '', type: 'income', category: 'Masculino', size: 'M', channel: 'Loja Física' });
     
-    // Cálculo de totais (sem filtro de mês)
-    const totals = transactions.reduce((acc, curr) => {
-        if (curr.type === 'income') { 
-            acc.income += curr.amount; 
-            acc.salesCount += 1; // Adiciona +1 ao contador de vendas
-        }
-        else { 
-            acc.expense += curr.amount; 
-        }
+    // FILTRO SOFT DELETE
+    const activeTransactions = transactions.filter(t => !t.deleted);
+
+    const totals = activeTransactions.reduce((acc, curr) => {
+        if (curr.type === 'income') { acc.income += curr.amount; acc.salesCount += 1; }
+        else { acc.expense += curr.amount; }
         return acc;
-    }, { income: 0, expense: 0, salesCount: 0 }); // Inicia contador em 0
+    }, { income: 0, expense: 0, salesCount: 0 });
     
     const balance = totals.income - totals.expense;
-
-    const handleCategoryChange = (e) => { 
-        const cat = e.target.value; 
-        if (SIZES[cat]) { 
-            setNewItem({...newItem, category: cat, size: SIZES[cat][0]}); 
-        } else { 
-            setNewItem({...newItem, category: cat}); 
-        } 
-    };
+    const handleCategoryChange = (e) => { const cat = e.target.value; if (SIZES[cat]) { setNewItem({...newItem, category: cat, size: SIZES[cat][0]}); } else { setNewItem({...newItem, category: cat}); } };
 
     const handleAddItem = async () => {
         if (!newItem.description || !newItem.amount || !user) return;
-        
         const today = new Date();
         const dateStr = `${today.getFullYear()}-${(today.getMonth()+1).toString().padStart(2, '0')}-${today.getDate().toString().padStart(2, '0')}`;
-        
-        const transactionData = {
-            description: newItem.description,
-            amount: Number(newItem.amount),
-            type: newItem.type,
-            category: newItem.category || (newItem.type === 'income' ? 'Masculino' : 'Outros'),
-            date: dateStr,
-            createdAt: Date.now()
-        };
-
-        if (newItem.type === 'income') {
-            transactionData.productModel = newItem.description;
-            transactionData.productSize = newItem.size;
-            transactionData.channel = newItem.channel;
-        }
-
-        try {
-            await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'copa_transactions'), transactionData);
-            // Reset mantendo padrões
-            setNewItem({ description: '', amount: '', type: 'income', category: 'Masculino', size: 'M', channel: 'Loja Física' });
-        } catch (error) {
-            console.error("Erro Copa:", error);
-            alert("Erro ao salvar.");
-        }
+        const transactionData = { description: newItem.description, amount: Number(newItem.amount), type: newItem.type, category: newItem.category || (newItem.type === 'income' ? 'Masculino' : 'Outros'), date: dateStr, createdAt: Date.now(), deleted: false }; // deleted false no create
+        if (newItem.type === 'income') { transactionData.productModel = newItem.description; transactionData.productSize = newItem.size; transactionData.channel = newItem.channel; }
+        try { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'copa_transactions'), transactionData); setNewItem({ description: '', amount: '', type: 'income', category: 'Masculino', size: 'M', channel: 'Loja Física' }); } catch (error) { console.error("Erro Copa:", error); alert("Erro ao salvar."); }
     };
 
     const handleDelete = async (id) => {
-        if (window.confirm("Excluir registro da Copa?") && user) {
-            try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'copa_transactions', id)); } 
-            catch (e) { console.error(e); }
+        if (window.confirm("Mover registro da Copa para lixeira?") && user) {
+            try { 
+                // SOFT DELETE
+                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'copa_transactions', id), { deleted: true }); 
+            } catch (e) { console.error(e); }
         }
     };
 
     return (
         <div className="space-y-6 animate-fade-in">
             <div className="bg-gradient-to-r from-yellow-400 to-green-500 p-6 rounded-xl shadow-lg text-white mb-6">
-                <div className="flex items-center gap-3 mb-2">
-                    {/* Ícone da bandeira agora é o customizado (Colorido) */}
-                    <BrazilFlagIcon size={32} className="text-blue-700" />
-                    <h2 className="text-2xl font-bold">Gestão Financeira - Copa do Mundo</h2>
-                </div>
+                <div className="flex items-center gap-3 mb-2"><BrazilFlagIcon size={32} className="text-blue-700" /><h2 className="text-2xl font-bold">Gestão Financeira - Copa do Mundo</h2></div>
                 <p className="opacity-90">Controle exclusivo de vendas e custos para o período do mundial.</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
                     <div className="flex justify-between items-center">
-                        <div>
-                            <p className="text-slate-500 text-sm font-medium">Total Vendas</p>
-                            <p className="text-2xl font-bold text-emerald-600">+ R$ {totals.income.toFixed(2)}</p>
-                        </div>
-                        <div className="text-right bg-emerald-50 px-3 py-2 rounded-lg border border-emerald-100">
-                             <p className="text-xs text-emerald-600 uppercase font-bold mb-1">Quantidade</p>
-                             <p className="text-xl font-bold text-emerald-700">{totals.salesCount} <span className="text-xs font-normal">itens</span></p>
-                        </div>
+                        <div><p className="text-slate-500 text-sm font-medium">Total Vendas</p><p className="text-2xl font-bold text-emerald-600">+ R$ {totals.income.toFixed(2)}</p></div>
+                        <div className="text-right bg-emerald-50 px-3 py-2 rounded-lg border border-emerald-100"><p className="text-xs text-emerald-600 uppercase font-bold mb-1">Quantidade</p><p className="text-xl font-bold text-emerald-700">{totals.salesCount} <span className="text-xs font-normal">itens</span></p></div>
                     </div>
                 </div>
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-                    <p className="text-slate-500 text-sm font-medium">Custos / Despesas</p>
-                    <p className="text-2xl font-bold text-red-600">- R$ {totals.expense.toFixed(2)}</p>
-                </div>
-                <div className={`p-6 rounded-xl shadow-sm border ${balance >= 0 ? 'bg-blue-50 border-blue-100' : 'bg-red-50 border-red-100'}`}>
-                    <p className={`text-sm font-medium ${balance >= 0 ? 'text-blue-600' : 'text-red-600'}`}>Saldo Copa</p>
-                    <p className={`text-2xl font-bold ${balance >= 0 ? 'text-blue-700' : 'text-red-700'}`}>R$ {balance.toFixed(2)}</p>
-                </div>
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><p className="text-slate-500 text-sm font-medium">Custos / Despesas</p><p className="text-2xl font-bold text-red-600">- R$ {totals.expense.toFixed(2)}</p></div>
+                <div className={`p-6 rounded-xl shadow-sm border ${balance >= 0 ? 'bg-blue-50 border-blue-100' : 'bg-red-50 border-red-100'}`}><p className={`text-sm font-medium ${balance >= 0 ? 'text-blue-600' : 'text-red-600'}`}>Saldo Copa</p><p className={`text-2xl font-bold ${balance >= 0 ? 'text-blue-700' : 'text-red-700'}`}>R$ {balance.toFixed(2)}</p></div>
             </div>
 
+            {/* Form e Tabela Copa iguais, apenas consumindo activeTransactions */}
             <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
-                <div className="flex justify-between items-center mb-3">
-                    <h3 className="text-sm font-bold text-slate-700">Lançamento Copa</h3>
-                    <div className="flex bg-white rounded-lg border border-slate-200 p-1">
-                        <button onClick={() => setNewItem({...newItem, type: 'income', category: 'Masculino'})} className={`px-3 py-1 text-xs font-bold rounded transition-colors ${newItem.type === 'income' ? 'bg-emerald-100 text-emerald-600' : 'text-slate-500 hover:bg-slate-50'}`}>Venda</button>
-                        <button onClick={() => setNewItem({...newItem, type: 'expense', category: 'Contas'})} className={`px-3 py-1 text-xs font-bold rounded transition-colors ${newItem.type === 'expense' ? 'bg-red-100 text-red-600' : 'text-slate-500 hover:bg-slate-50'}`}>Despesa</button>
-                    </div>
-                </div>
-
+                <div className="flex justify-between items-center mb-3"><h3 className="text-sm font-bold text-slate-700">Lançamento Copa</h3><div className="flex bg-white rounded-lg border border-slate-200 p-1"><button onClick={() => setNewItem({...newItem, type: 'income', category: 'Masculino'})} className={`px-3 py-1 text-xs font-bold rounded transition-colors ${newItem.type === 'income' ? 'bg-emerald-100 text-emerald-600' : 'text-slate-500 hover:bg-slate-50'}`}>Venda</button><button onClick={() => setNewItem({...newItem, type: 'expense', category: 'Contas'})} className={`px-3 py-1 text-xs font-bold rounded transition-colors ${newItem.type === 'expense' ? 'bg-red-100 text-red-600' : 'text-slate-500 hover:bg-slate-50'}`}>Despesa</button></div></div>
                 <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
-                    <div className="md:col-span-2">
-                        <label className="text-xs text-slate-500 block mb-1">{newItem.type === 'income' ? 'Modelo / Produto' : 'Descrição'}</label>
-                        <input 
-                            type="text" 
-                            value={newItem.description} 
-                            onChange={(e) => setNewItem({...newItem, description: e.target.value})} 
-                            className="w-full p-2 rounded border border-slate-300 text-sm" 
-                            placeholder={newItem.type === 'income' ? "Ex: Camiseta Brasil Azul" : "Ex: Conta de Luz"}
-                        />
-                    </div>
-
-                    {newItem.type === 'income' && (
-                        <>
-                            <div>
-                                <label className="text-xs text-slate-500 block mb-1">Gênero</label>
-                                <select value={newItem.category} onChange={handleCategoryChange} className="w-full p-2 rounded border border-slate-300 text-sm">
-                                    <option value="Masculino">Masculino</option>
-                                    <option value="Feminino">Feminino</option>
-                                    <option value="Infantil">Infantil</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label className="text-xs text-slate-500 block mb-1">Tamanho</label>
-                                <select value={newItem.size} onChange={e => setNewItem({...newItem, size: e.target.value})} className="w-full p-2 rounded border border-slate-300 text-sm">
-                                    {(SIZES[newItem.category] || SIZES['Masculino']).map(size => (<option key={size} value={size}>{size}</option>))}
-                                </select>
-                            </div>
-                            <div>
-                                <label className="text-xs text-slate-500 block mb-1">Canal</label>
-                                <select value={newItem.channel} onChange={e => setNewItem({...newItem, channel: e.target.value})} className="w-full p-2 rounded border border-slate-300 text-sm">
-                                    <option value="Loja Física">Loja Física</option>
-                                    <option value="Online">Online</option>
-                                </select>
-                            </div>
-                        </>
-                    )}
-
-                    {newItem.type === 'expense' && (
-                        <div className="md:col-span-3">
-                            <label className="text-xs text-slate-500 block mb-1">Categoria</label>
-                            <select value={newItem.category} onChange={e => setNewItem({...newItem, category: e.target.value})} className="w-full p-2 rounded border border-slate-300 text-sm">
-                                <option>Contas</option>
-                                <option>Fornecedor</option>
-                                <option>Funcionários</option>
-                                <option>Marketing</option>
-                                <option>Outros</option>
-                            </select>
-                        </div>
-                    )}
-
-                    <div className="md:col-span-1">
-                        <label className="text-xs text-slate-500 block mb-1">Valor</label>
-                        <input 
-                            type="number" 
-                            value={newItem.amount} 
-                            onChange={(e) => setNewItem({...newItem, amount: e.target.value})} 
-                            className="w-full p-2 rounded border border-slate-300 text-sm" 
-                            placeholder="0.00"
-                        />
-                    </div>
-                    <div className="md:col-span-1">
-                        <button 
-                            onClick={handleAddItem}
-                            className="w-full bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-blue-700 h-[38px] flex items-center justify-center"
-                        >
-                            <Plus size={18} />
-                        </button>
-                    </div>
+                    <div className="md:col-span-2"><label className="text-xs text-slate-500 block mb-1">{newItem.type === 'income' ? 'Modelo / Produto' : 'Descrição'}</label><input type="text" value={newItem.description} onChange={(e) => setNewItem({...newItem, description: e.target.value})} className="w-full p-2 rounded border border-slate-300 text-sm" placeholder={newItem.type === 'income' ? "Ex: Camiseta Brasil Azul" : "Ex: Conta de Luz"}/></div>
+                    {newItem.type === 'income' && (<><div><label className="text-xs text-slate-500 block mb-1">Gênero</label><select value={newItem.category} onChange={handleCategoryChange} className="w-full p-2 rounded border border-slate-300 text-sm"><option value="Masculino">Masculino</option><option value="Feminino">Feminino</option><option value="Infantil">Infantil</option></select></div><div><label className="text-xs text-slate-500 block mb-1">Tamanho</label><select value={newItem.size} onChange={e => setNewItem({...newItem, size: e.target.value})} className="w-full p-2 rounded border border-slate-300 text-sm">{(SIZES[newItem.category] || SIZES['Masculino']).map(size => (<option key={size} value={size}>{size}</option>))}</select></div><div><label className="text-xs text-slate-500 block mb-1">Canal</label><select value={newItem.channel} onChange={e => setNewItem({...newItem, channel: e.target.value})} className="w-full p-2 rounded border border-slate-300 text-sm"><option value="Loja Física">Loja Física</option><option value="Online">Online</option></select></div></>)}
+                    {newItem.type === 'expense' && (<div className="md:col-span-3"><label className="text-xs text-slate-500 block mb-1">Categoria</label><select value={newItem.category} onChange={e => setNewItem({...newItem, category: e.target.value})} className="w-full p-2 rounded border border-slate-300 text-sm"><option>Contas</option><option>Fornecedor</option><option>Funcionários</option><option>Marketing</option><option>Outros</option></select></div>)}
+                    <div className="md:col-span-1"><label className="text-xs text-slate-500 block mb-1">Valor</label><input type="number" value={newItem.amount} onChange={(e) => setNewItem({...newItem, amount: e.target.value})} className="w-full p-2 rounded border border-slate-300 text-sm" placeholder="0.00"/></div>
+                    <div className="md:col-span-1"><button onClick={handleAddItem} className="w-full bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-blue-700 h-[38px] flex items-center justify-center"><Plus size={18} /></button></div>
                 </div>
             </div>
 
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                <table className="w-full text-left">
-                    <thead className="bg-slate-50 border-b border-slate-200">
-                        <tr>
-                            <th className="p-4 text-xs font-semibold text-slate-500 uppercase">Data</th>
-                            <th className="p-4 text-xs font-semibold text-slate-500 uppercase">Descrição</th>
-                            <th className="p-4 text-xs font-semibold text-slate-500 uppercase text-right">Valor</th>
-                            <th className="p-4 w-10"></th>
-                        </tr>
-                    </thead>
+                <table className="w-full text-left"><thead className="bg-slate-50 border-b border-slate-200"><tr><th className="p-4 text-xs font-semibold text-slate-500 uppercase">Data</th><th className="p-4 text-xs font-semibold text-slate-500 uppercase">Descrição</th><th className="p-4 text-xs font-semibold text-slate-500 uppercase text-right">Valor</th><th className="p-4 w-10"></th></tr></thead>
                     <tbody className="divide-y divide-slate-100">
-                        {transactions.map((t) => (
+                        {activeTransactions.map((t) => (
                             <tr key={t.id} className="hover:bg-slate-50 group">
                                 <td className="p-4 text-sm text-slate-600">{t.date}</td>
-                                <td className="p-4 text-sm font-medium text-slate-800">
-                                    {t.description}
-                                    <div className="flex gap-1 mt-1">
-                                        <span className="px-2 py-0.5 rounded-full bg-slate-100 text-[10px] text-slate-500 uppercase">{t.category}</span>
-                                        {t.type === 'income' && t.productSize && (
-                                            <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-[10px] text-indigo-500 font-bold border border-indigo-100">{t.productSize}</span>
-                                        )}
-                                        {t.type === 'income' && t.channel && (
-                                            <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-[10px] text-emerald-600 border border-emerald-100">{t.channel}</span>
-                                        )}
-                                    </div>
-                                </td>
-                                <td className={`p-4 text-sm font-bold text-right ${t.type === 'income' ? 'text-emerald-600' : 'text-red-600'}`}>
-                                    {t.type === 'income' ? '+' : '-'} R$ {t.amount.toFixed(2)}
-                                </td>
-                                <td className="p-4">
-                                    <button 
-                                        onClick={() => handleDelete(t.id)} 
-                                        className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
-                                    >
-                                        <Trash2 size={16} />
-                                    </button>
-                                </td>
+                                <td className="p-4 text-sm font-medium text-slate-800">{t.description}<div className="flex gap-1 mt-1"><span className="px-2 py-0.5 rounded-full bg-slate-100 text-[10px] text-slate-500 uppercase">{t.category}</span>{t.type === 'income' && t.productSize && (<span className="px-2 py-0.5 rounded-full bg-indigo-50 text-[10px] text-indigo-500 font-bold border border-indigo-100">{t.productSize}</span>)}{t.type === 'income' && t.channel && (<span className="px-2 py-0.5 rounded-full bg-emerald-50 text-[10px] text-emerald-600 border border-emerald-100">{t.channel}</span>)}</div></td>
+                                <td className={`p-4 text-sm font-bold text-right ${t.type === 'income' ? 'text-emerald-600' : 'text-red-600'}`}>{t.type === 'income' ? '+' : '-'} R$ {t.amount.toFixed(2)}</td>
+                                <td className="p-4"><button onClick={() => handleDelete(t.id)} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"><Trash2 size={16} /></button></td>
                             </tr>
                         ))}
-                        {transactions.length === 0 && (
-                            <tr><td colSpan="4" className="p-8 text-center text-slate-400 text-sm">Nenhum registro da Copa ainda.</td></tr>
-                        )}
+                        {activeTransactions.length === 0 && (<tr><td colSpan="4" className="p-8 text-center text-slate-400 text-sm">Nenhum registro da Copa ainda.</td></tr>)}
                     </tbody>
                 </table>
             </div>
@@ -1400,286 +1282,84 @@ export default function App() {
   const [loading, setLoading] = useState(true); 
   const [loadingAuth, setLoadingAuth] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine); 
-  
-  // Estado de Configuração da Loja
   const [storeConfig, setStoreConfig] = useState(DEFAULT_CONFIG);
-
   const [inventory, setInventory] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [orders, setOrders] = useState([]);
-  
-  // Estado da Copa
   const [copaTransactions, setCopaTransactions] = useState([]);
 
   useEffect(() => {
     const initAuth = async () => {
         let signedIn = false;
-        // Tenta usar o token de ambiente se disponível
         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-            try {
-                await signInWithCustomToken(auth, __initial_auth_token);
-                signedIn = true;
-            } catch (error) {
-                // Ignora erro de token mismatch
-                if (error.code !== 'auth/custom-token-mismatch') {
-                    console.warn("Auto-auth failed:", error);
-                }
-            }
+            try { await signInWithCustomToken(auth, __initial_auth_token); signedIn = true; } 
+            catch (error) { if (error.code !== 'auth/custom-token-mismatch') console.warn("Auto-auth failed:", error); }
         }
-        
-        // Se falhar o token custom, tenta anónimo SE não estivermos logados
         if (!signedIn) {
-            try {
-                await signInAnonymously(auth);
-            } catch (error) {
-                // Ignora silenciosamente o erro de operação restrita para não travar a UI
-                if (error.code !== 'auth/admin-restricted-operation') {
-                    console.error("Anonymous auth error:", error);
-                }
-            }
+            try { await signInAnonymously(auth); } 
+            catch (error) { if (error.code !== 'auth/admin-restricted-operation') console.error("Anonymous auth error:", error); }
         }
-        // Sempre finaliza o loading, mesmo se falhar a auth automática
         setLoading(false);
     };
-    
     initAuth();
-
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setLoading(false); // Remove o loading assim que o estado de auth é resolvido
-    });
-    
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => { setUser(currentUser); setLoading(false); });
     const handleStatusChange = () => setIsOnline(navigator.onLine);
     window.addEventListener('online', handleStatusChange);
     window.addEventListener('offline', handleStatusChange);
-
-    return () => {
-        unsubscribe();
-        window.removeEventListener('online', handleStatusChange);
-        window.removeEventListener('offline', handleStatusChange);
-    };
+    return () => { unsubscribe(); window.removeEventListener('online', handleStatusChange); window.removeEventListener('offline', handleStatusChange); };
   }, []);
 
   const handleLogin = async (email, password) => {
     setLoadingAuth(true);
     if (!user) {
-         try {
-            // Tenta login com e-mail/senha
-            await signInWithEmailAndPassword(auth, email, password);
-         } catch (error) {
-            console.error("Erro Login:", error);
-            // Fallback inteligente para login anônimo se falhar (modo demo)
-            try {
-                await signInAnonymously(auth);
-                // Opcional: Avisar que entrou em modo demo
-                // alert("Entrando em modo de demonstração.");
-            } catch (anonError) {
-                console.error("Erro Login Anônimo:", anonError);
-                alert("Erro ao entrar. Tente novamente.");
-            }
+         try { await signInWithEmailAndPassword(auth, email, password); } 
+         catch (error) { 
+            console.error("Erro Login:", error); 
+            try { await signInAnonymously(auth); } 
+            catch (anonError) { console.error("Erro Login Anônimo:", anonError); alert("Erro ao entrar. Tente novamente."); }
          }
     }
     setLoadingAuth(false);
   };
 
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
-    } catch(error) {
-      console.error("Erro Logout:", error);
-    }
-  };
+  const handleLogout = async () => { try { await signOut(auth); } catch(error) { console.error("Erro Logout:", error); } };
 
   useEffect(() => {
     if (!user) return; 
-
-    const unsubConfig = onSnapshot(
-        doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'store_config'),
-        (doc) => {
-            if (doc.exists()) {
-                setStoreConfig(doc.data());
-            }
-        },
-        (error) => console.error("Erro config:", error)
-    );
-
-    const unsubInventory = onSnapshot(
-      collection(db, 'artifacts', appId, 'public', 'data', 'inventory'), 
-      (snapshot) => {
-        const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        // Ordenação feita no componente StockManager para visualização
-        setInventory(items);
-      },
-      (error) => console.error("Erro sync estoque:", error)
-    );
-
-    const unsubTransactions = onSnapshot(
-      collection(db, 'artifacts', appId, 'public', 'data', 'transactions'),
-      (snapshot) => {
-        const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        items.sort((a, b) => new Date(b.date) - new Date(a.date));
-        setTransactions(items);
-      },
-      (error) => console.error("Erro sync financeiro:", error)
-    );
-
-    const unsubOrders = onSnapshot(
-      collection(db, 'artifacts', appId, 'public', 'data', 'orders'),
-      (snapshot) => {
-        const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        items.sort((a, b) => new Date(b.date) - new Date(a.date));
-        setOrders(items);
-      },
-      (error) => console.error("Erro sync pedidos:", error)
-    );
-    
-    // Novo Sync para Copa
-    const unsubCopa = onSnapshot(
-      collection(db, 'artifacts', appId, 'public', 'data', 'copa_transactions'),
-      (snapshot) => {
-        const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        items.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-        setCopaTransactions(items);
-      },
-      (error) => console.error("Erro sync copa:", error)
-    );
-
-    return () => {
-      unsubConfig();
-      unsubInventory();
-      unsubTransactions();
-      unsubOrders();
-      unsubCopa();
-    };
+    const unsubConfig = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'store_config'), (doc) => { if (doc.exists()) { setStoreConfig(doc.data()); } }, (error) => console.error("Erro config:", error));
+    const unsubInventory = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'inventory'), (snapshot) => { const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); setInventory(items); }, (error) => console.error("Erro sync estoque:", error));
+    const unsubTransactions = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'transactions'), (snapshot) => { const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); items.sort((a, b) => new Date(b.date) - new Date(a.date)); setTransactions(items); }, (error) => console.error("Erro sync financeiro:", error));
+    const unsubOrders = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'orders'), (snapshot) => { const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); items.sort((a, b) => new Date(b.date) - new Date(a.date)); setOrders(items); }, (error) => console.error("Erro sync pedidos:", error));
+    const unsubCopa = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'copa_transactions'), (snapshot) => { const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); items.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)); setCopaTransactions(items); }, (error) => console.error("Erro sync copa:", error));
+    return () => { unsubConfig(); unsubInventory(); unsubTransactions(); unsubOrders(); unsubCopa(); };
   }, [user]);
 
-  if (loading) {
-      return <div className="min-h-screen flex items-center justify-center bg-slate-100 text-slate-500">Carregando Football Closet...</div>;
-  }
-
-  if (!user) {
-    return <LoginScreen onLogin={handleLogin} loading={loadingAuth} config={storeConfig} />;
-  }
+  if (loading) { return <div className="min-h-screen flex items-center justify-center bg-slate-100 text-slate-500">Carregando Football Closet...</div>; }
+  if (!user) { return <LoginScreen onLogin={handleLogin} loading={loadingAuth} config={storeConfig} />; }
 
   return (
     <div className="min-h-screen bg-slate-50 flex font-sans text-slate-900">
-      <aside 
-        className="w-20 lg:w-64 text-white flex-shrink-0 flex flex-col transition-all duration-300"
-        style={{ backgroundColor: storeConfig.sidebarColor }}
-      >
+      <aside className="w-20 lg:w-64 text-white flex-shrink-0 flex flex-col transition-all duration-300" style={{ backgroundColor: storeConfig.sidebarColor }}>
         <div className="p-6 flex items-center gap-3 border-b border-white/10">
-          <div 
-            className="p-1 rounded-lg shadow-lg h-10 w-10 flex items-center justify-center"
-            style={{ backgroundColor: storeConfig.logoBgColor }}
-          >
-             <img 
-                src={storeConfig.logoUrl} 
-                alt="Logo" 
-                className="h-full w-full object-contain"
-                onError={(e) => {e.target.onerror = null; e.target.src="https://via.placeholder.com/50?text=FC"}} 
-             />
-          </div>
+          <div className="p-1 rounded-lg shadow-lg h-10 w-10 flex items-center justify-center" style={{ backgroundColor: storeConfig.logoBgColor }}><img src={storeConfig.logoUrl} alt="Logo" className="h-full w-full object-contain" onError={(e) => {e.target.onerror = null; e.target.src="https://via.placeholder.com/50?text=FC"}} /></div>
           <h1 className="font-bold text-lg hidden lg:block truncate">{storeConfig.name}</h1>
         </div>
-        
         <nav className="flex-1 py-6 px-3 space-y-2">
-          <button 
-            onClick={() => setActiveTab('dashboard')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${activeTab === 'dashboard' ? 'bg-white/10 text-white shadow-lg' : 'text-white/60 hover:text-white hover:bg-white/5'}`}
-          >
-            <TrendingUp size={20} />
-            <span className="hidden lg:block font-medium">Visão Geral</span>
-          </button>
-
-          <button 
-            onClick={() => setActiveTab('ranking')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${activeTab === 'ranking' ? 'bg-white/10 text-white shadow-lg' : 'text-white/60 hover:text-white hover:bg-white/5'}`}
-          >
-            <Trophy size={20} />
-            <span className="hidden lg:block font-medium">Rankings</span>
-          </button>
-
-          <button 
-            onClick={() => setActiveTab('stock')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${activeTab === 'stock' ? 'bg-white/10 text-white shadow-lg' : 'text-white/60 hover:text-white hover:bg-white/5'}`}
-          >
-            <Package size={20} />
-            <span className="hidden lg:block font-medium">Estoque</span>
-          </button>
-
-          <button 
-            onClick={() => setActiveTab('orders')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${activeTab === 'orders' ? 'bg-white/10 text-white shadow-lg' : 'text-white/60 hover:text-white hover:bg-white/5'}`}
-          >
-            <Truck size={20} />
-            <span className="hidden lg:block font-medium">Pedidos</span>
-          </button>
-
-          <button 
-            onClick={() => setActiveTab('financial')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${activeTab === 'financial' ? 'bg-white/10 text-white shadow-lg' : 'text-white/60 hover:text-white hover:bg-white/5'}`}
-          >
-            <DollarSign size={20} />
-            <span className="hidden lg:block font-medium">Financeiro</span>
-          </button>
-
-           {/* NOVO BOTÃO COPA - Com ícone do Brasil Customizado */}
-          <button 
-            onClick={() => setActiveTab('copa')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${activeTab === 'copa' ? 'bg-gradient-to-r from-yellow-500/20 to-green-500/20 text-yellow-300 border border-yellow-500/30' : 'text-white/60 hover:text-white hover:bg-white/5'}`}
-          >
-            <BrazilFlagIcon size={20} className="text-yellow-400" />
-            <span className="hidden lg:block font-medium text-yellow-100">Copa do Mundo</span>
-          </button>
-
-          <button 
-            onClick={() => setActiveTab('settings')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${activeTab === 'settings' ? 'bg-white/10 text-white shadow-lg' : 'text-white/60 hover:text-white hover:bg-white/5'}`}
-          >
-            <Settings size={20} />
-            <span className="hidden lg:block font-medium">Configurações</span>
-          </button>
+          <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${activeTab === 'dashboard' ? 'bg-white/10 text-white shadow-lg' : 'text-white/60 hover:text-white hover:bg-white/5'}`}><TrendingUp size={20} /><span className="hidden lg:block font-medium">Visão Geral</span></button>
+          <button onClick={() => setActiveTab('ranking')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${activeTab === 'ranking' ? 'bg-white/10 text-white shadow-lg' : 'text-white/60 hover:text-white hover:bg-white/5'}`}><Trophy size={20} /><span className="hidden lg:block font-medium">Rankings</span></button>
+          <button onClick={() => setActiveTab('stock')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${activeTab === 'stock' ? 'bg-white/10 text-white shadow-lg' : 'text-white/60 hover:text-white hover:bg-white/5'}`}><Package size={20} /><span className="hidden lg:block font-medium">Estoque</span></button>
+          <button onClick={() => setActiveTab('orders')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${activeTab === 'orders' ? 'bg-white/10 text-white shadow-lg' : 'text-white/60 hover:text-white hover:bg-white/5'}`}><Truck size={20} /><span className="hidden lg:block font-medium">Pedidos</span></button>
+          <button onClick={() => setActiveTab('financial')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${activeTab === 'financial' ? 'bg-white/10 text-white shadow-lg' : 'text-white/60 hover:text-white hover:bg-white/5'}`}><DollarSign size={20} /><span className="hidden lg:block font-medium">Financeiro</span></button>
+          <button onClick={() => setActiveTab('copa')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${activeTab === 'copa' ? 'bg-gradient-to-r from-yellow-500/20 to-green-500/20 text-yellow-300 border border-yellow-500/30' : 'text-white/60 hover:text-white hover:bg-white/5'}`}><BrazilFlagIcon size={20} className="text-yellow-400" /><span className="hidden lg:block font-medium text-yellow-100">Copa do Mundo</span></button>
+          <button onClick={() => setActiveTab('settings')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${activeTab === 'settings' ? 'bg-white/10 text-white shadow-lg' : 'text-white/60 hover:text-white hover:bg-white/5'}`}><Settings size={20} /><span className="hidden lg:block font-medium">Configurações</span></button>
         </nav>
-
-        <div className="p-4 border-t border-white/10">
-           <button 
-             onClick={handleLogout}
-             className="w-full flex items-center justify-center gap-2 text-sm text-white/60 hover:text-white hover:bg-white/10 p-2 rounded-lg transition-colors"
-           >
-             <LogOut size={16} />
-             <span className="hidden lg:block">Sair do Sistema</span>
-           </button>
-        </div>
+        <div className="p-4 border-t border-white/10"><button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 text-sm text-white/60 hover:text-white hover:bg-white/10 p-2 rounded-lg transition-colors"><LogOut size={16} /><span className="hidden lg:block">Sair do Sistema</span></button></div>
       </aside>
-
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
         <header className="bg-white border-b border-slate-200 h-16 flex items-center justify-between px-8 flex-shrink-0">
-          <h2 className="text-xl font-bold text-slate-800">
-            {activeTab === 'dashboard' && 'Painel de Controle'}
-            {activeTab === 'ranking' && 'Rankings de Vendas'}
-            {activeTab === 'stock' && 'Controle de Estoque'}
-            {activeTab === 'orders' && 'Pedidos e Encomendas'}
-            {activeTab === 'financial' && 'Gestão Financeira'}
-            {activeTab === 'copa' && 'Gestão - Copa do Mundo'}
-            {activeTab === 'settings' && 'Configurações da Loja'}
-          </h2>
-          <div className="flex items-center gap-4">
-             {user && (
-                <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs border transition-colors ${isOnline ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-orange-50 text-orange-600 border-orange-100'}`}>
-                    {isOnline ? <Wifi size={12} /> : <WifiOff size={12} />} 
-                    {isOnline ? 'Online' : 'Modo Offline'}
-                </div>
-             )}
-            <div className="text-right hidden md:block">
-                <p className="text-sm font-bold text-slate-700">Admin</p>
-                <p className="text-xs text-slate-500">{storeConfig.name}</p>
-            </div>
-            <div className="h-10 w-10 bg-slate-200 rounded-full flex items-center justify-center text-slate-600 font-bold">
-                UA
-            </div>
-          </div>
+          <h2 className="text-xl font-bold text-slate-800">{activeTab === 'dashboard' && 'Painel de Controle'}{activeTab === 'ranking' && 'Rankings de Vendas'}{activeTab === 'stock' && 'Controle de Estoque'}{activeTab === 'orders' && 'Pedidos e Encomendas'}{activeTab === 'financial' && 'Gestão Financeira'}{activeTab === 'copa' && 'Gestão - Copa do Mundo'}{activeTab === 'settings' && 'Configurações da Loja'}</h2>
+          <div className="flex items-center gap-4">{user && (<div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs border transition-colors ${isOnline ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-orange-50 text-orange-600 border-orange-100'}`}>{isOnline ? <Wifi size={12} /> : <WifiOff size={12} />} {isOnline ? 'Online' : 'Modo Offline'}</div>)}<div className="text-right hidden md:block"><p className="text-sm font-bold text-slate-700">Admin</p><p className="text-xs text-slate-500">{storeConfig.name}</p></div><div className="h-10 w-10 bg-slate-200 rounded-full flex items-center justify-center text-slate-600 font-bold">UA</div></div>
         </header>
-
         <div className="flex-1 overflow-auto p-4 md:p-8">
           {activeTab === 'dashboard' && <Dashboard inventory={inventory} transactions={transactions} orders={orders} />}
           {activeTab === 'ranking' && <RankingDashboard transactions={transactions} />}
@@ -1687,7 +1367,8 @@ export default function App() {
           {activeTab === 'orders' && <OrdersManager orders={orders} user={user} inventory={inventory} />}
           {activeTab === 'financial' && <FinancialManager transactions={transactions} user={user} />}
           {activeTab === 'copa' && <CopaManager transactions={copaTransactions} user={user} />}
-          {activeTab === 'settings' && <SettingsManager config={storeConfig} user={user} />}
+          {/* Passando props extras para o SettingsManager para a lixeira funcionar */}
+          {activeTab === 'settings' && <SettingsManager config={storeConfig} user={user} inventory={inventory} transactions={transactions} orders={orders} copaTransactions={copaTransactions} />}
         </div>
       </main>
     </div>
