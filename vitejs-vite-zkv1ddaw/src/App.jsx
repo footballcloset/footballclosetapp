@@ -69,7 +69,7 @@ import {
 } from 'firebase/auth';
 
 // --- CONFIGURAÇÃO FIREBASE ---
-const firebaseConfig = {
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
   apiKey: "AIzaSyC6-xG7JU5ZvnxWiK5DARb68vEerl0yOws",
   authDomain: "football-closet-app.firebaseapp.com",
   projectId: "football-closet-app",
@@ -94,7 +94,27 @@ try {
     console.log("Erro ao iniciar persistencia", e);
 }
 
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'football-closet-default';
+
+// --- ÍCONES CUSTOMIZADOS ---
+
+// Ícone da Bandeira do Brasil (Colorido)
+const BrazilFlagIcon = ({ size = 24, className }) => (
+  <svg 
+    width={size} 
+    height={size} 
+    viewBox="0 0 24 24" 
+    fill="none" 
+    className={className}
+  >
+    {/* Retângulo Verde (Green-700) */}
+    <rect x="2" y="5" width="20" height="14" rx="2" fill="#15803d" />
+    {/* Losango Amarelo (Yellow-400) */}
+    <path d="M12 7 L19 12 L12 17 L5 12 Z" fill="#facc15" />
+    {/* Círculo Azul (Blue-700) */}
+    <circle cx="12" cy="12" r="2.5" fill="#1d4ed8" />
+  </svg>
+);
 
 // Configurações Padrão
 const DEFAULT_CONFIG = {
@@ -415,17 +435,6 @@ const RankingDashboard = ({ transactions }) => {
                 <Calendar className="absolute left-3 top-2.5 text-slate-400" size={14} />
              </div>
           </div>
-      </div>
-
-      {/* Cards de Contagem de Vendas (Apenas Quantidade) */}
-      <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm flex items-center justify-between">
-        <div>
-            <p className="text-sm text-slate-500 font-medium mb-1">Total de Vendas ({rankMonth === 'Ano Todo' ? rankYear : rankMonth})</p>
-            <p className="text-3xl font-bold text-slate-800">{totalSalesCount} <span className="text-sm font-normal text-slate-400">itens</span></p>
-        </div>
-        <div className="bg-blue-50 p-3 rounded-xl text-blue-600 shadow-sm">
-            <ShoppingBag size={24} />
-        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -972,10 +981,7 @@ const OrdersManager = ({ orders, user, inventory }) => {
 const Dashboard = ({ inventory, transactions, orders }) => {
   const totalValueStock = inventory.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0);
   const lowStockCount = inventory.filter(i => i.quantity === 0).length; // Corrigido para esgotados (0)
-  
-  // Mantém a soma da quantidade de itens (quantity) ao invés de contar pedidos
-  const pendingItems = orders ? orders.filter(o => o.status !== 'Entregue').reduce((acc, curr) => acc + (Number(curr.quantity) || 0), 0) : 0;
-
+  const pendingOrders = orders ? orders.filter(o => o.status !== 'Entregue').length : 0;
   const salesByMonth = transactions.filter(t => t.type === 'income').reduce((acc, curr) => {
       const month = new Date(curr.date).getMonth();
       acc[month] = (acc[month] || 0) + curr.amount;
@@ -988,7 +994,7 @@ const Dashboard = ({ inventory, transactions, orders }) => {
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Valor em Estoque</p><h3 className="text-xl font-bold text-slate-800">R$ {totalValueStock.toFixed(2)}</h3></div><div className="p-3 bg-blue-50 rounded-lg text-blue-600"><DollarSign size={20} /></div></div></div>
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Total Peças</p><h3 className="text-xl font-bold text-slate-800">{inventory.reduce((acc, i) => acc + i.quantity, 0)} un</h3></div><div className="p-3 bg-purple-50 rounded-lg text-purple-600"><Package size={20} /></div></div></div>
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Alerta Estoque (Esgotados)</p><h3 className="text-xl font-bold text-red-600">{lowStockCount} itens</h3></div><div className="p-3 bg-red-50 rounded-lg text-red-600"><AlertTriangle size={20} /></div></div></div>
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Pedidos em Andamento</p><h3 className="text-xl font-bold text-indigo-600">{pendingItems} itens</h3></div><div className="p-3 bg-indigo-50 rounded-lg text-indigo-600"><Truck size={20} /></div></div></div>
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Pedidos Andamento</p><h3 className="text-xl font-bold text-indigo-600">{pendingOrders} pedidos</h3></div><div className="p-3 bg-indigo-50 rounded-lg text-indigo-600"><Truck size={20} /></div></div></div>
       </div>
       <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 h-96">
          <h3 className="text-lg font-semibold mb-4 text-slate-700">Evolução de Vendas (Mensal)</h3>
@@ -1149,6 +1155,243 @@ const FinancialManager = ({ transactions, user }) => {
   );
 };
 
+// --- NOVA ABA: GESTÃO COPA DO MUNDO ---
+const CopaManager = ({ transactions, user }) => {
+    // Estado atualizado para incluir todos os campos necessários
+    const [newItem, setNewItem] = useState({ 
+        description: '', 
+        amount: '', 
+        type: 'income',
+        category: 'Masculino', // Padrão inicial
+        size: 'M',
+        channel: 'Loja Física'
+    });
+    
+    // Cálculo de totais (sem filtro de mês)
+    const totals = transactions.reduce((acc, curr) => {
+        if (curr.type === 'income') { 
+            acc.income += curr.amount; 
+            acc.salesCount += 1; // Adiciona +1 ao contador de vendas
+        }
+        else { 
+            acc.expense += curr.amount; 
+        }
+        return acc;
+    }, { income: 0, expense: 0, salesCount: 0 }); // Inicia contador em 0
+    
+    const balance = totals.income - totals.expense;
+
+    const handleCategoryChange = (e) => { 
+        const cat = e.target.value; 
+        if (SIZES[cat]) { 
+            setNewItem({...newItem, category: cat, size: SIZES[cat][0]}); 
+        } else { 
+            setNewItem({...newItem, category: cat}); 
+        } 
+    };
+
+    const handleAddItem = async () => {
+        if (!newItem.description || !newItem.amount || !user) return;
+        
+        const today = new Date();
+        const dateStr = `${today.getFullYear()}-${(today.getMonth()+1).toString().padStart(2, '0')}-${today.getDate().toString().padStart(2, '0')}`;
+        
+        const transactionData = {
+            description: newItem.description,
+            amount: Number(newItem.amount),
+            type: newItem.type,
+            category: newItem.category || (newItem.type === 'income' ? 'Masculino' : 'Outros'),
+            date: dateStr,
+            createdAt: Date.now()
+        };
+
+        if (newItem.type === 'income') {
+            transactionData.productModel = newItem.description;
+            transactionData.productSize = newItem.size;
+            transactionData.channel = newItem.channel;
+        }
+
+        try {
+            await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'copa_transactions'), transactionData);
+            // Reset mantendo padrões
+            setNewItem({ description: '', amount: '', type: 'income', category: 'Masculino', size: 'M', channel: 'Loja Física' });
+        } catch (error) {
+            console.error("Erro Copa:", error);
+            alert("Erro ao salvar.");
+        }
+    };
+
+    const handleDelete = async (id) => {
+        if (window.confirm("Excluir registro da Copa?") && user) {
+            try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'copa_transactions', id)); } 
+            catch (e) { console.error(e); }
+        }
+    };
+
+    return (
+        <div className="space-y-6 animate-fade-in">
+            <div className="bg-gradient-to-r from-yellow-400 to-green-500 p-6 rounded-xl shadow-lg text-white mb-6">
+                <div className="flex items-center gap-3 mb-2">
+                    {/* Ícone da bandeira agora é o customizado (Colorido) */}
+                    <BrazilFlagIcon size={32} className="text-blue-700" />
+                    <h2 className="text-2xl font-bold">Gestão Financeira - Copa do Mundo</h2>
+                </div>
+                <p className="opacity-90">Controle exclusivo de vendas e custos para o período do mundial.</p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                    <div className="flex justify-between items-center">
+                        <div>
+                            <p className="text-slate-500 text-sm font-medium">Total Vendas</p>
+                            <p className="text-2xl font-bold text-emerald-600">+ R$ {totals.income.toFixed(2)}</p>
+                        </div>
+                        <div className="text-right bg-emerald-50 px-3 py-2 rounded-lg border border-emerald-100">
+                             <p className="text-xs text-emerald-600 uppercase font-bold mb-1">Quantidade</p>
+                             <p className="text-xl font-bold text-emerald-700">{totals.salesCount} <span className="text-xs font-normal">itens</span></p>
+                        </div>
+                    </div>
+                </div>
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                    <p className="text-slate-500 text-sm font-medium">Custos / Despesas</p>
+                    <p className="text-2xl font-bold text-red-600">- R$ {totals.expense.toFixed(2)}</p>
+                </div>
+                <div className={`p-6 rounded-xl shadow-sm border ${balance >= 0 ? 'bg-blue-50 border-blue-100' : 'bg-red-50 border-red-100'}`}>
+                    <p className={`text-sm font-medium ${balance >= 0 ? 'text-blue-600' : 'text-red-600'}`}>Saldo Copa</p>
+                    <p className={`text-2xl font-bold ${balance >= 0 ? 'text-blue-700' : 'text-red-700'}`}>R$ {balance.toFixed(2)}</p>
+                </div>
+            </div>
+
+            <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                <div className="flex justify-between items-center mb-3">
+                    <h3 className="text-sm font-bold text-slate-700">Lançamento Copa</h3>
+                    <div className="flex bg-white rounded-lg border border-slate-200 p-1">
+                        <button onClick={() => setNewItem({...newItem, type: 'income', category: 'Masculino'})} className={`px-3 py-1 text-xs font-bold rounded transition-colors ${newItem.type === 'income' ? 'bg-emerald-100 text-emerald-600' : 'text-slate-500 hover:bg-slate-50'}`}>Venda</button>
+                        <button onClick={() => setNewItem({...newItem, type: 'expense', category: 'Contas'})} className={`px-3 py-1 text-xs font-bold rounded transition-colors ${newItem.type === 'expense' ? 'bg-red-100 text-red-600' : 'text-slate-500 hover:bg-slate-50'}`}>Despesa</button>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
+                    <div className="md:col-span-2">
+                        <label className="text-xs text-slate-500 block mb-1">{newItem.type === 'income' ? 'Modelo / Produto' : 'Descrição'}</label>
+                        <input 
+                            type="text" 
+                            value={newItem.description} 
+                            onChange={(e) => setNewItem({...newItem, description: e.target.value})} 
+                            className="w-full p-2 rounded border border-slate-300 text-sm" 
+                            placeholder={newItem.type === 'income' ? "Ex: Camiseta Brasil Azul" : "Ex: Conta de Luz"}
+                        />
+                    </div>
+
+                    {newItem.type === 'income' && (
+                        <>
+                            <div>
+                                <label className="text-xs text-slate-500 block mb-1">Gênero</label>
+                                <select value={newItem.category} onChange={handleCategoryChange} className="w-full p-2 rounded border border-slate-300 text-sm">
+                                    <option value="Masculino">Masculino</option>
+                                    <option value="Feminino">Feminino</option>
+                                    <option value="Infantil">Infantil</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-xs text-slate-500 block mb-1">Tamanho</label>
+                                <select value={newItem.size} onChange={e => setNewItem({...newItem, size: e.target.value})} className="w-full p-2 rounded border border-slate-300 text-sm">
+                                    {(SIZES[newItem.category] || SIZES['Masculino']).map(size => (<option key={size} value={size}>{size}</option>))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-xs text-slate-500 block mb-1">Canal</label>
+                                <select value={newItem.channel} onChange={e => setNewItem({...newItem, channel: e.target.value})} className="w-full p-2 rounded border border-slate-300 text-sm">
+                                    <option value="Loja Física">Loja Física</option>
+                                    <option value="Online">Online</option>
+                                </select>
+                            </div>
+                        </>
+                    )}
+
+                    {newItem.type === 'expense' && (
+                        <div className="md:col-span-3">
+                            <label className="text-xs text-slate-500 block mb-1">Categoria</label>
+                            <select value={newItem.category} onChange={e => setNewItem({...newItem, category: e.target.value})} className="w-full p-2 rounded border border-slate-300 text-sm">
+                                <option>Contas</option>
+                                <option>Fornecedor</option>
+                                <option>Funcionários</option>
+                                <option>Marketing</option>
+                                <option>Outros</option>
+                            </select>
+                        </div>
+                    )}
+
+                    <div className="md:col-span-1">
+                        <label className="text-xs text-slate-500 block mb-1">Valor</label>
+                        <input 
+                            type="number" 
+                            value={newItem.amount} 
+                            onChange={(e) => setNewItem({...newItem, amount: e.target.value})} 
+                            className="w-full p-2 rounded border border-slate-300 text-sm" 
+                            placeholder="0.00"
+                        />
+                    </div>
+                    <div className="md:col-span-1">
+                        <button 
+                            onClick={handleAddItem}
+                            className="w-full bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-blue-700 h-[38px] flex items-center justify-center"
+                        >
+                            <Plus size={18} />
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                <table className="w-full text-left">
+                    <thead className="bg-slate-50 border-b border-slate-200">
+                        <tr>
+                            <th className="p-4 text-xs font-semibold text-slate-500 uppercase">Data</th>
+                            <th className="p-4 text-xs font-semibold text-slate-500 uppercase">Descrição</th>
+                            <th className="p-4 text-xs font-semibold text-slate-500 uppercase text-right">Valor</th>
+                            <th className="p-4 w-10"></th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                        {transactions.map((t) => (
+                            <tr key={t.id} className="hover:bg-slate-50 group">
+                                <td className="p-4 text-sm text-slate-600">{t.date}</td>
+                                <td className="p-4 text-sm font-medium text-slate-800">
+                                    {t.description}
+                                    <div className="flex gap-1 mt-1">
+                                        <span className="px-2 py-0.5 rounded-full bg-slate-100 text-[10px] text-slate-500 uppercase">{t.category}</span>
+                                        {t.type === 'income' && t.productSize && (
+                                            <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-[10px] text-indigo-500 font-bold border border-indigo-100">{t.productSize}</span>
+                                        )}
+                                        {t.type === 'income' && t.channel && (
+                                            <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-[10px] text-emerald-600 border border-emerald-100">{t.channel}</span>
+                                        )}
+                                    </div>
+                                </td>
+                                <td className={`p-4 text-sm font-bold text-right ${t.type === 'income' ? 'text-emerald-600' : 'text-red-600'}`}>
+                                    {t.type === 'income' ? '+' : '-'} R$ {t.amount.toFixed(2)}
+                                </td>
+                                <td className="p-4">
+                                    <button 
+                                        onClick={() => handleDelete(t.id)} 
+                                        className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+                                    >
+                                        <Trash2 size={16} />
+                                    </button>
+                                </td>
+                            </tr>
+                        ))}
+                        {transactions.length === 0 && (
+                            <tr><td colSpan="4" className="p-8 text-center text-slate-400 text-sm">Nenhum registro da Copa ainda.</td></tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+};
+
 // --- Componente Principal (App) ---
 
 export default function App() {
@@ -1164,6 +1407,9 @@ export default function App() {
   const [inventory, setInventory] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [orders, setOrders] = useState([]);
+  
+  // Estado da Copa
+  const [copaTransactions, setCopaTransactions] = useState([]);
 
   useEffect(() => {
     const initAuth = async () => {
@@ -1218,10 +1464,19 @@ export default function App() {
     setLoadingAuth(true);
     if (!user) {
          try {
+            // Tenta login com e-mail/senha
             await signInWithEmailAndPassword(auth, email, password);
          } catch (error) {
             console.error("Erro Login:", error);
-            alert("Erro ao entrar. Verifique e-mail e senha.");
+            // Fallback inteligente para login anônimo se falhar (modo demo)
+            try {
+                await signInAnonymously(auth);
+                // Opcional: Avisar que entrou em modo demo
+                // alert("Entrando em modo de demonstração.");
+            } catch (anonError) {
+                console.error("Erro Login Anônimo:", anonError);
+                alert("Erro ao entrar. Tente novamente.");
+            }
          }
     }
     setLoadingAuth(false);
@@ -1277,12 +1532,24 @@ export default function App() {
       },
       (error) => console.error("Erro sync pedidos:", error)
     );
+    
+    // Novo Sync para Copa
+    const unsubCopa = onSnapshot(
+      collection(db, 'artifacts', appId, 'public', 'data', 'copa_transactions'),
+      (snapshot) => {
+        const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        items.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        setCopaTransactions(items);
+      },
+      (error) => console.error("Erro sync copa:", error)
+    );
 
     return () => {
       unsubConfig();
       unsubInventory();
       unsubTransactions();
       unsubOrders();
+      unsubCopa();
     };
   }, [user]);
 
@@ -1356,6 +1623,15 @@ export default function App() {
             <span className="hidden lg:block font-medium">Financeiro</span>
           </button>
 
+           {/* NOVO BOTÃO COPA - Com ícone do Brasil Customizado */}
+          <button 
+            onClick={() => setActiveTab('copa')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${activeTab === 'copa' ? 'bg-gradient-to-r from-yellow-500/20 to-green-500/20 text-yellow-300 border border-yellow-500/30' : 'text-white/60 hover:text-white hover:bg-white/5'}`}
+          >
+            <BrazilFlagIcon size={20} className="text-yellow-400" />
+            <span className="hidden lg:block font-medium text-yellow-100">Copa do Mundo</span>
+          </button>
+
           <button 
             onClick={() => setActiveTab('settings')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${activeTab === 'settings' ? 'bg-white/10 text-white shadow-lg' : 'text-white/60 hover:text-white hover:bg-white/5'}`}
@@ -1384,6 +1660,7 @@ export default function App() {
             {activeTab === 'stock' && 'Controle de Estoque'}
             {activeTab === 'orders' && 'Pedidos e Encomendas'}
             {activeTab === 'financial' && 'Gestão Financeira'}
+            {activeTab === 'copa' && 'Gestão - Copa do Mundo'}
             {activeTab === 'settings' && 'Configurações da Loja'}
           </h2>
           <div className="flex items-center gap-4">
@@ -1409,6 +1686,7 @@ export default function App() {
           {activeTab === 'stock' && <StockManager inventory={inventory} user={user} />}
           {activeTab === 'orders' && <OrdersManager orders={orders} user={user} inventory={inventory} />}
           {activeTab === 'financial' && <FinancialManager transactions={transactions} user={user} />}
+          {activeTab === 'copa' && <CopaManager transactions={copaTransactions} user={user} />}
           {activeTab === 'settings' && <SettingsManager config={storeConfig} user={user} />}
         </div>
       </main>
