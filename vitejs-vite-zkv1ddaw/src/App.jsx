@@ -162,7 +162,8 @@ const LoginScreen = ({ onLogin, loading, config }) => {
                 src={config.logoUrl} 
                 alt="Logo" 
                 className="h-24 object-contain"
-                onError={(e) => {e.target.onerror = null; e.target.src="https://via.placeholder.com/150?text=LOGO"}} 
+                // CORREÇÃO: via.placeholder.com -> placehold.co
+                onError={(e) => {e.target.onerror = null; e.target.src="https://placehold.co/150?text=LOGO"}} 
               />
            </div>
            <h1 className="text-2xl font-bold text-slate-800 text-center">{config.name}</h1>
@@ -352,7 +353,8 @@ const SettingsManager = ({ config, user, inventory, transactions, orders, copaTr
                                             src={localConfig.logoUrl} 
                                             alt="Preview" 
                                             className="h-8 w-8 object-contain"
-                                            onError={(e) => {e.target.onerror = null; e.target.src="https://via.placeholder.com/50?text=FC"}}
+                                            // CORREÇÃO: via.placeholder.com -> placehold.co
+                                            onError={(e) => {e.target.onerror = null; e.target.src="https://placehold.co/50?text=FC"}}
                                         />
                                     </div>
                                     <span className="font-bold text-sm">{localConfig.name}</span>
@@ -1354,7 +1356,7 @@ export default function App() {
     <div className="min-h-screen bg-slate-50 flex font-sans text-slate-900">
       <aside className="w-20 lg:w-64 text-white flex-shrink-0 flex flex-col transition-all duration-300" style={{ backgroundColor: storeConfig.sidebarColor }}>
         <div className="p-6 flex items-center gap-3 border-b border-white/10">
-          <div className="p-1 rounded-lg shadow-lg h-10 w-10 flex items-center justify-center" style={{ backgroundColor: storeConfig.logoBgColor }}><img src={storeConfig.logoUrl} alt="Logo" className="h-full w-full object-contain" onError={(e) => {e.target.onerror = null; e.target.src="https://via.placeholder.com/50?text=FC"}} /></div>
+          <div className="p-1 rounded-lg shadow-lg h-10 w-10 flex items-center justify-center" style={{ backgroundColor: storeConfig.logoBgColor }}><img src={storeConfig.logoUrl} alt="Logo" className="h-full w-full object-contain" onError={(e) => {e.target.onerror = null; e.target.src="https://placehold.co/50?text=FC"}} /></div>
           <h1 className="font-bold text-lg hidden lg:block truncate">{storeConfig.name}</h1>
         </div>
         <nav className="flex-1 py-6 px-3 space-y-2">
