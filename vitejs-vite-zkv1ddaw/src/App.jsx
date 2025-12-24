@@ -397,7 +397,7 @@ const SettingsManager = ({ config, user, inventory, transactions, orders, copaTr
                                 <div className="bg-slate-50 rounded-lg border border-slate-200 divide-y divide-slate-200">
                                     {deletedInventory.map(item => (
                                         <div key={item.id} className="p-3 flex justify-between items-center">
-                                            <span className="text-sm text-slate-600">{item.name} <span className="text-slate-400">({item.size})</span></span>
+                                            <span className="text-sm text-slate-600">{item.name} <span className="text-slate-400">({item.size})</span> {item.isCopa && <span className="text-[10px] bg-yellow-100 text-yellow-700 px-1 rounded ml-1">COPA</span>}</span>
                                             <button onClick={() => handleRestore('inventory', item.id)} className="text-blue-600 hover:text-blue-800 text-xs font-bold flex items-center gap-1"><RotateCcw size={14}/> Restaurar</button>
                                         </div>
                                     ))}
@@ -693,17 +693,16 @@ const RankingDashboard = ({ transactions }) => {
 
 // --- DASHBOARD ---
 const Dashboard = ({ inventory, transactions, orders }) => {
-  // FILTROS SOFT DELETE (Ignorar itens deletados)
-  const activeInventory = inventory.filter(i => !i.deleted);
+  // FILTROS: 
+  // 1. Soft Delete
+  // 2. EXCLUIR itens da Copa do cálculo geral (conforme solicitado: "os numeros do estoque da copa nao contabilizem no geral")
+  const activeInventory = inventory.filter(i => !i.deleted && !i.isCopa);
   const activeOrders = orders.filter(o => !o.deleted);
   const activeTransactions = transactions.filter(t => !t.deleted);
 
   const totalValueStock = activeInventory.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0);
   const lowStockCount = activeInventory.filter(i => i.quantity === 0).length;
   
-  // CORREÇÃO SOLICITADA:
-  // pendingItems calcula a soma da quantidade de todos os pedidos em aberto.
-  // A exibição foi ajustada para mostrar apenas esta contagem.
   const pendingItems = activeOrders ? activeOrders.filter(o => o.status !== 'Entregue').reduce((acc, curr) => acc + (Number(curr.quantity) || 0), 0) : 0;
 
   const salesByMonth = activeTransactions.filter(t => t.type === 'income').reduce((acc, curr) => {
@@ -716,8 +715,8 @@ const Dashboard = ({ inventory, transactions, orders }) => {
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Valor em Estoque</p><h3 className="text-xl font-bold text-slate-800">R$ {totalValueStock.toFixed(2)}</h3></div><div className="p-3 bg-blue-50 rounded-lg text-blue-600"><DollarSign size={20} /></div></div></div>
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Total Peças</p><h3 className="text-xl font-bold text-slate-800">{activeInventory.reduce((acc, i) => acc + i.quantity, 0)} un</h3></div><div className="p-3 bg-purple-50 rounded-lg text-purple-600"><Package size={20} /></div></div></div>
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Valor em Estoque (Geral)</p><h3 className="text-xl font-bold text-slate-800">R$ {totalValueStock.toFixed(2)}</h3></div><div className="p-3 bg-blue-50 rounded-lg text-blue-600"><DollarSign size={20} /></div></div></div>
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Peças Loja Principal</p><h3 className="text-xl font-bold text-slate-800">{activeInventory.reduce((acc, i) => acc + i.quantity, 0)} un</h3></div><div className="p-3 bg-purple-50 rounded-lg text-purple-600"><Package size={20} /></div></div></div>
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Alerta Estoque (Esgotados)</p><h3 className="text-xl font-bold text-red-600">{lowStockCount} itens</h3></div><div className="p-3 bg-red-50 rounded-lg text-red-600"><AlertTriangle size={20} /></div></div></div>
         
         {/* CARD ALTERADO CONFORME PEDIDO */}
@@ -739,6 +738,9 @@ const StockManager = ({ inventory, user }) => {
     const [editingId, setEditingId] = useState(null);
     const [filterCategory, setFilterCategory] = useState('Todos');
     const [searchTerm, setSearchTerm] = useState('');
+    
+    // NOVO: Estado para alternar entre estoque geral e copa
+    const [stockView, setStockView] = useState('general'); // 'general' | 'copa'
 
     const handleCategoryChange = (e) => { const newCategory = e.target.value; setNewItem({ ...newItem, category: newCategory, size: SIZES[newCategory][0] }); };
     
@@ -758,6 +760,8 @@ const StockManager = ({ inventory, user }) => {
         if (!newItem.name || !user) return;
 
         const nameToCompare = newItem.name.trim().toLowerCase();
+        // Flag para definir se é item de copa baseado na view atual
+        const isCopaItem = stockView === 'copa';
 
         try {
         if (editingId) {
@@ -768,15 +772,18 @@ const StockManager = ({ inventory, user }) => {
                 size: newItem.size,
                 quantity: Number(newItem.quantity),
                 price: Number(newItem.price)
+                // Nota: Não atualizamos o isCopa aqui para evitar mover itens acidentalmente. 
+                // Se o usuário quiser mudar um item de Geral para Copa, melhor deletar e criar de novo por segurança
             });
             alert('Produto atualizado com sucesso!');
         } else {
-            // Verifica se existe mas NÃO está deletado
+            // Verifica se existe mas NÃO está deletado E coincide com o tipo (Geral/Copa)
             const existingItem = inventory.find(item => 
                 !item.deleted &&
                 item.name.trim().toLowerCase() === nameToCompare && 
                 item.category === newItem.category && 
-                item.size === newItem.size
+                item.size === newItem.size &&
+                (isCopaItem ? item.isCopa : !item.isCopa)
             );
 
             if (existingItem) {
@@ -791,7 +798,8 @@ const StockManager = ({ inventory, user }) => {
                     quantity: Number(newItem.quantity),
                     price: Number(newItem.price),
                     isClearance: false,
-                    deleted: false, // Flag padrão
+                    isCopa: isCopaItem, // Salva a flag
+                    deleted: false, 
                     createdAt: Date.now()
                 });
             }
@@ -810,7 +818,6 @@ const StockManager = ({ inventory, user }) => {
     const handleDelete = async (id) => { 
         if (window.confirm('Mover este item para a lixeira?') && user) { 
             try { 
-                // SOFT DELETE: Apenas marca como deletado
                 await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'inventory', id), { deleted: true }); 
             } catch (error) { 
                 console.error("Erro ao excluir:", error); 
@@ -825,8 +832,13 @@ const StockManager = ({ inventory, user }) => {
         if (item.isClearance) { await updateDoc(itemRef, { isClearance: false, price: item.originalPrice || item.price }); } else { await updateDoc(itemRef, { isClearance: true, originalPrice: item.price, price: Number((item.price * 0.7).toFixed(2)) }); }
     };
 
-    // Filtra removendo os deletados
-    const activeInventory = inventory.filter(i => !i.deleted);
+    // Filtra removendo os deletados E aplicando o filtro Geral vs Copa
+    const activeInventory = inventory.filter(i => {
+        if (i.deleted) return false;
+        // Se a view é Copa, só mostra itens com isCopa = true.
+        // Se a view é Geral, só mostra itens que NÃO são Copa (ou isCopa undefined/false)
+        return stockView === 'copa' ? i.isCopa : !i.isCopa;
+    });
 
     const counts = {
         masculino: activeInventory.filter(i => i.category === 'Masculino').reduce((acc, i) => acc + i.quantity, 0),
@@ -838,20 +850,45 @@ const StockManager = ({ inventory, user }) => {
     // Lógica de Filtragem e Ordenação
     const filteredInventory = activeInventory
         .filter(item => {
-            // Filtro por Categoria
             if (filterCategory === 'Todos') return true;
             if (filterCategory === 'Queima') return item.isClearance;
             return item.category === filterCategory;
         })
         .filter(item => {
-            // Filtro por Pesquisa (Nome)
             if (!searchTerm) return true;
             return item.name.toLowerCase().includes(searchTerm.toLowerCase());
         })
-        .sort((a, b) => a.name.localeCompare(b.name)); // Ordenação Alfabética
+        .sort((a, b) => a.name.localeCompare(b.name));
 
     return (
         <div className="space-y-6 animate-fade-in">
+        
+        {/* NOVO: Seletor de Tipo de Estoque */}
+        <div className="flex bg-slate-100 p-1 rounded-xl w-fit border border-slate-200 shadow-inner">
+            <button 
+                onClick={() => setStockView('general')} 
+                className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${stockView === 'general' ? 'bg-white text-slate-800 shadow-md' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+                <Package size={18} />
+                Loja Principal
+            </button>
+            <button 
+                onClick={() => setStockView('copa')} 
+                className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${stockView === 'copa' ? 'bg-gradient-to-r from-yellow-100 to-green-100 text-green-800 shadow-md border border-green-200' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+                <BrazilFlagIcon size={18} />
+                Estoque Copa
+            </button>
+        </div>
+
+        {/* Banner Informativo se estiver no modo Copa */}
+        {stockView === 'copa' && (
+            <div className="bg-gradient-to-r from-yellow-50 to-green-50 border border-yellow-200 p-4 rounded-xl flex items-center gap-3 text-yellow-800 text-sm">
+                <BrazilFlagIcon size={24} />
+                <span>Você está visualizando e gerenciando o <strong>Estoque Exclusivo da Copa</strong>. Estes itens não são contabilizados no estoque geral.</span>
+            </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4"> 
             <button onClick={() => setFilterCategory('Todos')} className={`p-4 rounded-xl border transition-all ${filterCategory === 'Todos' ? 'bg-slate-800 text-white border-slate-800 shadow-md' : 'bg-white border-slate-200 hover:border-slate-300 text-slate-600'}`}><span className="block font-bold text-xl">{activeInventory.reduce((acc, i) => acc + i.quantity, 0)}</span><span className="text-xs uppercase tracking-wider opacity-70 flex items-center gap-2 justify-center"><Filter size={12}/> Todos</span></button>
             <button onClick={() => setFilterCategory('Masculino')} className={`p-4 rounded-xl border transition-all ${filterCategory === 'Masculino' ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-200' : 'bg-white border-blue-100 text-blue-600 hover:bg-blue-50'}`}><span className="block font-bold text-xl">{counts.masculino}</span><span className="text-xs uppercase tracking-wider opacity-70">Masculino</span></button>
@@ -861,7 +898,11 @@ const StockManager = ({ inventory, user }) => {
         </div>
         
         <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-            <h2 className="text-xl font-bold text-slate-800">{filterCategory === 'Todos' ? 'Todos os Produtos' : filterCategory === 'Queima' ? 'Itens em Queima de Estoque' : `Estoque ${filterCategory}`}</h2>
+            <h2 className="text-xl font-bold text-slate-800">
+                {filterCategory === 'Todos' ? `Todos os Produtos (${stockView === 'copa' ? 'Copa' : 'Geral'})` : 
+                 filterCategory === 'Queima' ? 'Itens em Queima de Estoque' : 
+                 `Estoque ${filterCategory} (${stockView === 'copa' ? 'Copa' : 'Geral'})`}
+            </h2>
             
             <div className="flex gap-2 w-full md:w-auto">
                 {/* Barra de Pesquisa */}
@@ -885,16 +926,17 @@ const StockManager = ({ inventory, user }) => {
                     className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg transition-colors shadow-sm whitespace-nowrap"
                 >
                     {showForm ? <X size={18}/> : <Plus size={18}/>}
-                    {showForm ? 'Cancelar' : 'Novo'}
+                    {showForm ? 'Cancelar' : `Novo Item ${stockView === 'copa' ? 'Copa' : ''}`}
                 </button>
             </div>
         </div>
 
-        {/* ... (Formulário igual, apenas lógica handleDelete alterada acima) ... */}
         {showForm && (
-            <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 animate-slide-down">
+            <div className={`bg-slate-50 p-6 rounded-xl border border-slate-200 animate-slide-down ${stockView === 'copa' ? 'border-l-4 border-l-yellow-400' : 'border-l-4 border-l-slate-800'}`}>
                 <div className="mb-4">
-                    <h3 className="text-lg font-bold text-slate-700">{editingId ? 'Editar Produto' : 'Adicionar Produto'}</h3>
+                    <h3 className="text-lg font-bold text-slate-700">
+                        {editingId ? 'Editar Produto' : `Adicionar Produto (${stockView === 'copa' ? 'Copa' : 'Geral'})`}
+                    </h3>
                 </div>
             <div className="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
                 <div className="md:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-1">Nome do Produto</label><input type="text" value={newItem.name} onChange={e => setNewItem({...newItem, name: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="Ex: Camiseta Polo"/></div>
@@ -918,7 +960,13 @@ const StockManager = ({ inventory, user }) => {
                 else if (item.quantity === 1) rowClass = "bg-yellow-100 border-b border-yellow-200 hover:bg-yellow-200 text-yellow-900";
                 return (
                     <tr key={item.id} className={rowClass}>
-                    <td className="p-4 font-medium">{item.name}{item.quantity === 0 && <span className="ml-2 text-xs bg-red-600 text-white px-2 py-0.5 rounded-full">ESGOTADO</span>}{item.quantity === 1 && <span className="ml-2 text-xs bg-yellow-600 text-white px-2 py-0.5 rounded-full">ACABANDO</span>}{item.isClearance && <span className="ml-2 text-xs bg-orange-500 text-white px-2 py-0.5 rounded-full inline-flex items-center gap-1">🔥 QUEIMA</span>}</td>
+                    <td className="p-4 font-medium">
+                        {item.name}
+                        {item.quantity === 0 && <span className="ml-2 text-xs bg-red-600 text-white px-2 py-0.5 rounded-full">ESGOTADO</span>}
+                        {item.quantity === 1 && <span className="ml-2 text-xs bg-yellow-600 text-white px-2 py-0.5 rounded-full">ACABANDO</span>}
+                        {item.isClearance && <span className="ml-2 text-xs bg-orange-500 text-white px-2 py-0.5 rounded-full inline-flex items-center gap-1">🔥 QUEIMA</span>}
+                        {item.isCopa && <span className="ml-2 text-xs bg-green-600 text-white px-2 py-0.5 rounded-full">COPA</span>}
+                    </td>
                     <td className="p-4 text-sm opacity-80">{item.category}</td>
                     <td className="p-4 font-semibold text-slate-600"><span className="bg-slate-100 border border-slate-200 px-2 py-1 rounded text-xs">{item.size || '-'}</span></td>
                     <td className="p-4 font-bold">{item.quantity}</td>
@@ -931,7 +979,7 @@ const StockManager = ({ inventory, user }) => {
                     </tr>
                 );
                 })}
-                {filteredInventory.length === 0 && (<tr><td colSpan="6" className="p-8 text-center text-slate-400">{filterCategory === 'Todos' ? 'Nenhum produto cadastrado.' : `Nenhum produto encontrado na categoria ${filterCategory}.`}</td></tr>)}
+                {filteredInventory.length === 0 && (<tr><td colSpan="6" className="p-8 text-center text-slate-400">{filterCategory === 'Todos' ? `Nenhum produto cadastrado no Estoque ${stockView === 'copa' ? 'Copa' : 'Geral'}.` : `Nenhum produto encontrado na categoria ${filterCategory}.`}</td></tr>)}
             </tbody>
             </table>
         </div>
@@ -987,8 +1035,14 @@ const OrdersManager = ({ orders, user, inventory }) => {
   const addToStock = async (orderData) => {
       // (Lógica addToStock mantida igual)
       const nameToCompare = orderData.model.trim().toLowerCase();
+      
+      // Nota: Pedidos aqui por padrão vão para o estoque GERAL (!isCopa).
+      // Se quiser que pedidos possam ir para a Copa, precisaríamos de um checkbox no form de pedidos.
+      // Por enquanto, assumimos que pedidos são fluxo normal da loja.
+      
       const existingItem = inventory.find(item => 
-          !item.deleted && // Garante não somar a item deletado
+          !item.deleted && 
+          !item.isCopa && // Só soma se for estoque geral
           item.name.trim().toLowerCase() === nameToCompare && 
           item.category === orderData.category && 
           item.size === orderData.size
@@ -1006,6 +1060,7 @@ const OrdersManager = ({ orders, user, inventory }) => {
             quantity: Number(orderData.quantity),
             price: 0, 
             isClearance: false,
+            isCopa: false, // Padrão
             deleted: false,
             createdAt: Date.now()
         });
@@ -1041,7 +1096,7 @@ const OrdersManager = ({ orders, user, inventory }) => {
 
       if (shouldAddToStock) {
           await addToStock(newOrder);
-          alert("Produto adicionado ao estoque automaticamente!");
+          alert("Produto adicionado ao estoque GERAL automaticamente!");
       }
       setNewOrder({ date: '', model: '', supplier: '', status: 'Pedido Realizado', category: 'Masculino', size: 'M', quantity: 1 });
       setEditingId(null);
