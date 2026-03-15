@@ -135,7 +135,7 @@ const MONTHS = [
 const SIZES = {
   'Masculino': ['P', 'M', 'G', 'GG', '2GG', '3GG', '4GG'],
   'Feminino': ['P', 'M', 'G', 'GG'],
-  'Infantil': ['5-6 anos', '7-8 anos', '9-10 anos', '11-12 anos', '13-14 anos']
+  'Infantil': ['3-4 anos', '5-6 anos', '7-8 anos', '9-10 anos', '11-12 anos', '13-14 anos']
 };
 
 // --- TELA DE LOGIN ---
@@ -463,41 +463,66 @@ const SettingsManager = ({ config, user, inventory, transactions, orders, copaTr
 };
 
 // --- DASHBOARD DE RANKING ---
-const RankingDashboard = ({ transactions }) => {
+const RankingDashboard = ({ transactions, copaTransactions = [] }) => {
   const [sizeTab, setSizeTab] = useState('Masculino');
   const [rankYear, setRankYear] = useState(new Date().getFullYear());
   const [rankMonth, setRankMonth] = useState('Ano Todo');
 
-  // FILTRO SOFT DELETE
-  const sales = transactions.filter(t => {
-    if (t.deleted) return false; // Ignora deletados
-    if (t.type !== 'income') return false; 
-    const tDate = new Date(t.date + 'T12:00:00'); 
+  const filteredMainSales = transactions.filter(t => {
+    if (t.deleted) return false;
+    if (t.type !== 'income') return false;
+    const tDate = new Date(t.date + 'T12:00:00');
     const isSameYear = tDate.getFullYear() === rankYear;
-    if (rankMonth === 'Ano Todo') {
-        return isSameYear;
-    } else {
-        return isSameYear && tDate.getMonth() === MONTHS.indexOf(rankMonth);
-    }
+    if (!isSameYear) return false;
+    if (rankMonth === 'Ano Todo') return true;
+    return tDate.getMonth() === MONTHS.indexOf(rankMonth);
   });
 
-  // Cálculos de Totais (Quantidade)
-  const totalSalesCount = sales.length; // Conta cada venda lançada como 1
+  const filteredCopaSales = copaTransactions.filter(t => {
+    if (t.deleted) return false;
+    if (t.type !== 'income') return false;
+    const rawDate = t.date ? `${t.date}T12:00:00` : null;
+    const tDate = rawDate ? new Date(rawDate) : new Date(t.createdAt || Date.now());
+    const isSameYear = tDate.getFullYear() === rankYear;
+    if (!isSameYear) return false;
+    if (rankMonth === 'Ano Todo') return true;
+    return tDate.getMonth() === MONTHS.indexOf(rankMonth);
+  }).map(t => ({ ...t, productType: 'Copa' }));
 
-  // Dados para o Gráfico Comparativo (Ano Todo)
+  const allSales = [...filteredMainSales, ...filteredCopaSales];
+
+  const segmentedCounts = {
+    camisasTime: filteredMainSales.filter(t => (t.productType || 'Camisa de time') === 'Camisa de time').length,
+    copa: filteredCopaSales.length,
+    marcaPropria: filteredMainSales.filter(t => t.productType === 'Marca própria').length,
+    acessorios: filteredMainSales.filter(t => t.productType === 'Acessórios').length,
+  };
+
+  const segmentedCards = [
+    { key: 'camisas', title: 'Camisas de time', value: segmentedCounts.camisasTime, icon: ShoppingBag, className: 'bg-blue-50 border-blue-100 text-blue-700' },
+    { key: 'copa', title: 'Copa', value: segmentedCounts.copa, icon: BrazilFlagIcon, className: 'bg-gradient-to-r from-yellow-50 to-green-50 border-yellow-200 text-green-700' },
+    { key: 'marca', title: 'Marca própria', value: segmentedCounts.marcaPropria, icon: Store, className: 'bg-violet-50 border-violet-100 text-violet-700' },
+    { key: 'acessorios', title: 'Acessórios', value: segmentedCounts.acessorios, icon: Package, className: 'bg-orange-50 border-orange-100 text-orange-700' },
+  ];
+
   const yearlyComparisonData = useMemo(() => {
      if (rankMonth !== 'Ano Todo') return [];
      return MONTHS.map((m, index) => {
-        const count = sales.filter(t => {
+        const mainCount = filteredMainSales.filter(t => {
             const d = new Date(t.date + 'T12:00:00');
             return d.getMonth() === index;
         }).length;
-        return { name: m.substring(0,3), vendas: count };
+        const copaCount = filteredCopaSales.filter(t => {
+            const rawDate = t.date ? `${t.date}T12:00:00` : null;
+            const d = rawDate ? new Date(rawDate) : new Date(t.createdAt || Date.now());
+            return d.getMonth() === index;
+        }).length;
+        return { name: m.substring(0,3), vendas: mainCount + copaCount };
      });
-  }, [sales, rankMonth]);
+  }, [filteredMainSales, filteredCopaSales, rankMonth]);
 
-  const modelCounts = sales.reduce((acc, curr) => {
-    const model = curr.productModel || 'Outros';
+  const modelCounts = allSales.reduce((acc, curr) => {
+    const model = curr.productModel || curr.description || 'Outros';
     acc[model] = (acc[model] || 0) + 1;
     return acc;
   }, {});
@@ -507,7 +532,11 @@ const RankingDashboard = ({ transactions }) => {
     .slice(0, 5);
 
   const processSizes = (category) => {
-      const filtered = sales.filter(t => t.category === category);
+      const filtered = allSales.filter(t => {
+        const type = t.productType || 'Camisa de time';
+        if (type === 'Acessórios') return false;
+        return t.category === category;
+      });
       const counts = filtered.reduce((acc, curr) => {
         const size = curr.productSize || 'N/A';
         acc[size] = (acc[size] || 0) + 1;
@@ -520,14 +549,14 @@ const RankingDashboard = ({ transactions }) => {
 
   const sizeData = processSizes(sizeTab);
 
-  const genderCounts = sales.reduce((acc, curr) => {
+  const genderCounts = allSales.reduce((acc, curr) => {
     const gender = curr.category || 'Geral';
     acc[gender] = (acc[gender] || 0) + 1;
     return acc;
   }, {});
   const genderData = Object.entries(genderCounts).map(([name, value]) => ({ name, value }));
 
-  const channelCounts = sales.reduce((acc, curr) => {
+  const channelCounts = allSales.reduce((acc, curr) => {
     const channel = curr.channel || 'Loja Física';
     acc[channel] = (acc[channel] || 0) + 1;
     return acc;
@@ -541,7 +570,10 @@ const RankingDashboard = ({ transactions }) => {
               <div className="bg-yellow-100 p-2 rounded-lg text-yellow-600">
                  <Trophy size={20}/>
               </div>
-              <h2 className="text-lg font-bold">Rankings de Vendas</h2>
+              <div>
+                <h2 className="text-lg font-bold">Rankings de Vendas</h2>
+                <p className="text-xs text-slate-400">Visualização segmentada por unidade de negócio</p>
+              </div>
           </div>
           <div className="flex items-center gap-3">
              <div className="flex items-center bg-slate-100 rounded-lg p-1 border border-slate-200">
@@ -559,16 +591,23 @@ const RankingDashboard = ({ transactions }) => {
           </div>
       </div>
 
-      <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm flex items-center justify-between">
-            <div className="flex items-center gap-4">
-                 <div className="bg-blue-100 p-3 rounded-full text-blue-600">
-                     <ShoppingBag size={24} />
-                 </div>
-                 <div>
-                    <p className="text-sm text-slate-500 font-medium mb-1">Total Itens Vendidos ({rankMonth === 'Ano Todo' ? rankYear : rankMonth})</p>
-                    <p className="text-3xl font-bold text-slate-800">{totalSalesCount} <span className="text-lg font-normal text-slate-400">unidades</span></p>
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+        {segmentedCards.map(card => {
+          const IconComponent = card.icon;
+          return (
+            <div key={card.key} className={`p-5 rounded-xl border shadow-sm ${card.className}`}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium opacity-80">{card.title}</p>
+                  <p className="text-3xl font-bold">{card.value} <span className="text-base font-normal opacity-60">un</span></p>
                 </div>
+                <div className="p-3 rounded-full bg-white/70">
+                  <IconComponent size={22} />
+                </div>
+              </div>
             </div>
+          );
+        })}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -580,9 +619,7 @@ const RankingDashboard = ({ transactions }) => {
              </span>
           </h3>
           <ResponsiveContainer width="100%" height="85%">
-            {/* Lógica Condicional do Gráfico */}
             {rankMonth === 'Ano Todo' ? (
-                // GRÁFICO COMPARATIVO MENSAL
                  yearlyComparisonData.reduce((acc, curr) => acc + curr.vendas, 0) > 0 ? (
                     <BarChart data={yearlyComparisonData}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
@@ -597,7 +634,6 @@ const RankingDashboard = ({ transactions }) => {
                     </div>
                  )
             ) : (
-                // GRÁFICO DE MODELOS MAIS VENDIDOS (Antigo)
                 topModelsData.length > 0 ? (
                     <BarChart data={topModelsData} layout="vertical" margin={{ left: 40 }}>
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} />
@@ -650,7 +686,7 @@ const RankingDashboard = ({ transactions }) => {
           </div>
         </div>
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 h-80">
-          <h3 className="text-lg font-semibold mb-4 text-slate-700">Vendas por Gênero</h3>
+          <h3 className="text-lg font-semibold mb-4 text-slate-700">Vendas por Categoria</h3>
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie data={genderData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
@@ -691,41 +727,440 @@ const RankingDashboard = ({ transactions }) => {
   );
 };
 
-// --- DASHBOARD ---
-const Dashboard = ({ inventory, transactions, orders }) => {
-  // FILTROS: 
-  // 1. Soft Delete
-  // 2. EXCLUIR itens da Copa do cálculo geral (conforme solicitado: "os numeros do estoque da copa nao contabilizem no geral")
-  const activeInventory = inventory.filter(i => !i.deleted && !i.isCopa);
+// --- PEDIDOS (OrdersManager) ---
+const OrdersManager = ({ orders = [], user, inventory = [] }) => {
+  const [newOrder, setNewOrder] = useState({
+    date: '',
+    model: '',
+    supplier: '',
+    status: 'Pedido Realizado',
+    category: 'Masculino',
+    size: 'M',
+    quantity: 1
+  });
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [viewMode, setViewMode] = useState('active');
+
   const activeOrders = orders.filter(o => !o.deleted);
-  const activeTransactions = transactions.filter(t => !t.deleted);
+  const displayedOrders = viewMode === 'active'
+    ? activeOrders.filter(o => o.status !== 'Entregue')
+    : activeOrders.filter(o => o.status === 'Entregue');
 
-  const totalValueStock = activeInventory.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0);
-  const lowStockCount = activeInventory.filter(i => i.quantity === 0).length;
-  
-  const pendingItems = activeOrders ? activeOrders.filter(o => o.status !== 'Entregue').reduce((acc, curr) => acc + (Number(curr.quantity) || 0), 0) : 0;
+  const resetOrderForm = () => {
+    setNewOrder({
+      date: '',
+      model: '',
+      supplier: '',
+      status: 'Pedido Realizado',
+      category: 'Masculino',
+      size: 'M',
+      quantity: 1
+    });
+    setEditingId(null);
+    setShowForm(false);
+  };
 
-  const salesByMonth = activeTransactions.filter(t => t.type === 'income').reduce((acc, curr) => {
-      const month = new Date(curr.date).getMonth();
-      acc[month] = (acc[month] || 0) + curr.amount;
-      return acc;
-    }, {});
-  const salesData = MONTHS.map((m, i) => ({ name: m.substring(0, 3), vendas: salesByMonth[i] || 0 })).slice(0, new Date().getMonth() + 1);
-  
+  const handleOrderCategoryChange = (e) => {
+    const category = e.target.value;
+    setNewOrder(prev => ({ ...prev, category, size: SIZES[category][0] }));
+  };
+
+  const handleEditOrder = (order) => {
+    setNewOrder({
+      date: order.date || '',
+      model: order.model || '',
+      supplier: order.supplier || '',
+      status: order.status || 'Pedido Realizado',
+      category: order.category || 'Masculino',
+      size: order.size || 'M',
+      quantity: order.quantity || 1
+    });
+    setEditingId(order.id);
+    setShowForm(true);
+  };
+
+  const addDeliveredOrderToStock = async (orderData) => {
+    const cleanedName = (orderData.model || '').trim();
+    if (!cleanedName) return;
+
+    const existingItem = inventory.find(item => {
+      if (item.deleted) return false;
+      if (item.isCopa) return false;
+      if ((item.productType || 'Camisa de time') !== 'Camisa de time') return false;
+      if ((item.name || '').trim().toLowerCase() !== cleanedName.toLowerCase()) return false;
+      if ((item.category || '') !== orderData.category) return false;
+      if ((item.size || '') !== orderData.size) return false;
+      return true;
+    });
+
+    if (existingItem) {
+      const itemRef = doc(db, 'artifacts', appId, 'public', 'data', 'inventory', existingItem.id);
+      const newQuantity = Number(existingItem.quantity || 0) + Number(orderData.quantity || 0);
+      await updateDoc(itemRef, { quantity: newQuantity });
+    } else {
+      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'inventory'), {
+        name: cleanedName,
+        productType: 'Camisa de time',
+        category: orderData.category,
+        size: orderData.size,
+        quantity: Number(orderData.quantity || 0),
+        price: 0,
+        isClearance: false,
+        isCopa: false,
+        deleted: false,
+        createdAt: Date.now()
+      });
+    }
+  };
+
+  const handleSaveOrder = async () => {
+    if (!user || !newOrder.model || !newOrder.supplier) return;
+
+    try {
+      const orderPayload = {
+        ...newOrder,
+        model: newOrder.model.trim(),
+        quantity: Number(newOrder.quantity || 0),
+        date: newOrder.date || new Date().toISOString().slice(0, 10)
+      };
+
+      let shouldAddToStock = false;
+
+      if (editingId) {
+        const previousOrder = orders.find(o => o.id === editingId);
+        if (orderPayload.status === 'Entregue' && previousOrder?.status !== 'Entregue') {
+          shouldAddToStock = true;
+        }
+        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'orders', editingId), orderPayload);
+        alert('Pedido atualizado com sucesso!');
+      } else {
+        if (orderPayload.status === 'Entregue') {
+          shouldAddToStock = true;
+        }
+        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'orders'), {
+          ...orderPayload,
+          deleted: false,
+          createdAt: Date.now()
+        });
+        alert('Pedido cadastrado com sucesso!');
+      }
+
+      if (shouldAddToStock) {
+        await addDeliveredOrderToStock(orderPayload);
+        alert('Pedido entregue e produto lançado automaticamente no estoque de camisas de time!');
+      }
+
+      resetOrderForm();
+    } catch (error) {
+      console.error('Erro ao salvar pedido:', error);
+      alert('Erro ao salvar pedido.');
+    }
+  };
+
+  const handleDeleteOrder = async (id) => {
+    if (!user) return;
+    if (window.confirm('Mover pedido para a lixeira?')) {
+      try {
+        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'orders', id), { deleted: true, deletedAt: Date.now() });
+      } catch (error) {
+        console.error('Erro ao excluir pedido:', error);
+        alert('Erro ao excluir pedido.');
+      }
+    }
+  };
+
+  const statusColors = {
+    'Pedido Realizado': 'bg-slate-100 text-slate-700 border-slate-200',
+    'Enviado': 'bg-blue-100 text-blue-700 border-blue-200',
+    'Em Trânsito Nacional': 'bg-indigo-100 text-indigo-700 border-indigo-200',
+    'Retido na Alfândega': 'bg-red-100 text-red-700 border-red-200',
+    'Liberado Alfândega': 'bg-amber-100 text-amber-700 border-amber-200',
+    'Entregue': 'bg-emerald-100 text-emerald-700 border-emerald-200'
+  };
+
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Valor em Estoque (Geral)</p><h3 className="text-xl font-bold text-slate-800">R$ {totalValueStock.toFixed(2)}</h3></div><div className="p-3 bg-blue-50 rounded-lg text-blue-600"><DollarSign size={20} /></div></div></div>
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Peças Loja Principal</p><h3 className="text-xl font-bold text-slate-800">{activeInventory.reduce((acc, i) => acc + i.quantity, 0)} un</h3></div><div className="p-3 bg-purple-50 rounded-lg text-purple-600"><Package size={20} /></div></div></div>
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Alerta Estoque (Esgotados)</p><h3 className="text-xl font-bold text-red-600">{lowStockCount} itens</h3></div><div className="p-3 bg-red-50 rounded-lg text-red-600"><AlertTriangle size={20} /></div></div></div>
-        
-        {/* CARD ALTERADO CONFORME PEDIDO */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><div className="flex justify-between items-center"><div><p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Pedidos Andamento</p><h3 className="text-xl font-bold text-indigo-600">{pendingItems} itens</h3></div><div className="p-3 bg-indigo-50 rounded-lg text-indigo-600"><Truck size={20} /></div></div></div>
-      
+      <div className="flex bg-slate-100 p-1 rounded-lg w-fit mb-4 border border-slate-200">
+        <button onClick={() => setViewMode('active')} className={`px-4 py-2 text-sm font-medium rounded-md transition-all flex items-center gap-2 ${viewMode === 'active' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}><Truck size={16} /> Pedidos em Andamento</button>
+        <button onClick={() => setViewMode('history')} className={`px-4 py-2 text-sm font-medium rounded-md transition-all flex items-center gap-2 ${viewMode === 'history' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}><History size={16} /> Histórico de Entregas</button>
       </div>
+
+      <div className="flex justify-between items-center gap-4 flex-wrap">
+        <div>
+          <h2 className="text-xl font-bold text-slate-800">{viewMode === 'active' ? 'Acompanhamento de Pedidos' : 'Pedidos Entregues'}</h2>
+          <p className="text-sm text-slate-400">Ao marcar como entregue, o produto entra automaticamente no estoque de camisas de time.</p>
+        </div>
+        <button
+          onClick={() => {
+            if (showForm && !editingId) {
+              resetOrderForm();
+            } else {
+              setEditingId(null);
+              setNewOrder({
+                date: '',
+                model: '',
+                supplier: '',
+                status: 'Pedido Realizado',
+                category: 'Masculino',
+                size: 'M',
+                quantity: 1
+              });
+              setShowForm(!showForm);
+            }
+          }}
+          className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg transition-colors shadow-sm"
+        >
+          {showForm ? <X size={18} /> : <Plus size={18} />}
+          {showForm ? 'Cancelar' : 'Novo Pedido'}
+        </button>
+      </div>
+
+      {showForm && (
+        <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 animate-slide-down">
+          <div className="mb-4">
+            <h3 className="text-lg font-bold text-slate-700">{editingId ? 'Editar Pedido' : 'Cadastrar Novo Pedido'}</h3>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Data</label>
+              <input type="date" value={newOrder.date} onChange={e => setNewOrder({ ...newOrder, date: e.target.value })} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-slate-500 outline-none" />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-slate-700 mb-1">Modelo / Produto</label>
+              <input type="text" value={newOrder.model} onChange={e => setNewOrder({ ...newOrder, model: e.target.value })} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-slate-500 outline-none" placeholder="Ex: Brasil 2002" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Fornecedor</label>
+              <input type="text" value={newOrder.supplier} onChange={e => setNewOrder({ ...newOrder, supplier: e.target.value })} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-slate-500 outline-none" placeholder="Ex: Fornecedor A" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
+              <select value={newOrder.status} onChange={e => setNewOrder({ ...newOrder, status: e.target.value })} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-slate-500 outline-none">
+                <option value="Pedido Realizado">Pedido Realizado</option>
+                <option value="Enviado">Enviado</option>
+                <option value="Em Trânsito Nacional">Em Trânsito Nacional</option>
+                <option value="Retido na Alfândega">Retido na Alfândega</option>
+                <option value="Liberado Alfândega">Liberado Alfândega</option>
+                <option value="Entregue">Entregue</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Categoria</label>
+              <select value={newOrder.category} onChange={handleOrderCategoryChange} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-slate-500 outline-none">
+                <option value="Masculino">Masculino</option>
+                <option value="Feminino">Feminino</option>
+                <option value="Infantil">Infantil</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Tamanho</label>
+              <select value={newOrder.size} onChange={e => setNewOrder({ ...newOrder, size: e.target.value })} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-slate-500 outline-none">
+                {SIZES[newOrder.category].map(size => <option key={size} value={size}>{size}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Quantidade</label>
+              <input type="number" min="1" value={newOrder.quantity} onChange={e => setNewOrder({ ...newOrder, quantity: e.target.value })} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-slate-500 outline-none" />
+            </div>
+            <div>
+              <button onClick={handleSaveOrder} className="w-full bg-emerald-600 text-white px-4 py-2 rounded hover:bg-emerald-700 font-medium">
+                {editingId ? 'Atualizar Pedido' : 'Salvar Pedido'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <table className="w-full text-left">
+          <thead className="bg-slate-50 border-b border-slate-200">
+            <tr>
+              <th className="p-4 text-xs font-semibold text-slate-500 uppercase">Data</th>
+              <th className="p-4 text-xs font-semibold text-slate-500 uppercase">Produto</th>
+              <th className="p-4 text-xs font-semibold text-slate-500 uppercase">Fornecedor</th>
+              <th className="p-4 text-xs font-semibold text-slate-500 uppercase">Detalhes</th>
+              <th className="p-4 text-xs font-semibold text-slate-500 uppercase">Status</th>
+              <th className="p-4 text-xs font-semibold text-slate-500 uppercase text-right">Ações</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {displayedOrders.length > 0 ? displayedOrders.map(order => (
+              <tr key={order.id} className="hover:bg-slate-50 group">
+                <td className="p-4 text-sm text-slate-600">{order.date || '-'}</td>
+                <td className="p-4 text-sm font-medium text-slate-800">{order.model}</td>
+                <td className="p-4 text-sm text-slate-600">{order.supplier}</td>
+                <td className="p-4 text-sm text-slate-600">
+                  <div className="flex flex-wrap gap-1">
+                    <span className="px-2 py-0.5 rounded-full bg-slate-100 text-[10px] text-slate-500 uppercase">{order.category}</span>
+                    <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-[10px] text-indigo-500 font-bold border border-indigo-100">{order.size}</span>
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-[10px] text-emerald-600 border border-emerald-100">Qtd: {order.quantity}</span>
+                  </div>
+                </td>
+                <td className="p-4 text-sm">
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium border ${statusColors[order.status] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+                    {order.status}
+                  </span>
+                </td>
+                <td className="p-4 text-right">
+                  <div className="flex items-center justify-end gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all">
+                    <button onClick={() => handleEditOrder(order)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Editar"><Pencil size={16} /></button>
+                    <button onClick={() => handleDeleteOrder(order.id)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors" title="Excluir"><Trash2 size={16} /></button>
+                  </div>
+                </td>
+              </tr>
+            )) : (
+              <tr>
+                <td colSpan="6" className="p-8 text-center text-slate-400 text-sm">
+                  {viewMode === 'active' ? 'Nenhum pedido em andamento.' : 'Nenhum pedido entregue ainda.'}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+// --- DASHBOARD ---
+const Dashboard = ({ inventory, transactions, orders, copaTransactions = [] }) => {
+  const activeOrders = orders.filter(o => !o.deleted);
+
+  const lojaPrincipalInventory = inventory.filter(i => !i.deleted && !i.isCopa && (i.productType || 'Camisa de time') === 'Camisa de time');
+  const copaInventory = inventory.filter(i => !i.deleted && i.isCopa && (i.productType || 'Camisa de time') === 'Camisa de time');
+  const marcaPropriaInventory = inventory.filter(i => !i.deleted && !i.isCopa && i.productType === 'Marca própria');
+  const acessoriosInventory = inventory.filter(i => !i.deleted && !i.isCopa && i.productType === 'Acessórios');
+
+  const segmentedStock = {
+    camisasTime: {
+      quantity: lojaPrincipalInventory.reduce((acc, item) => acc + Number(item.quantity || 0), 0),
+      value: lojaPrincipalInventory.reduce((acc, curr) => acc + (Number(curr.price || 0) * Number(curr.quantity || 0)), 0),
+      soldOut: lojaPrincipalInventory.filter(item => Number(item.quantity || 0) === 0).length,
+    },
+    copa: {
+      quantity: copaInventory.reduce((acc, item) => acc + Number(item.quantity || 0), 0),
+      value: copaInventory.reduce((acc, curr) => acc + (Number(curr.price || 0) * Number(curr.quantity || 0)), 0),
+      soldOut: copaInventory.filter(item => Number(item.quantity || 0) === 0).length,
+    },
+    marcaPropria: {
+      quantity: marcaPropriaInventory.reduce((acc, item) => acc + Number(item.quantity || 0), 0),
+      value: marcaPropriaInventory.reduce((acc, curr) => acc + (Number(curr.price || 0) * Number(curr.quantity || 0)), 0),
+      soldOut: marcaPropriaInventory.filter(item => Number(item.quantity || 0) === 0).length,
+    },
+    acessorios: {
+      quantity: acessoriosInventory.reduce((acc, item) => acc + Number(item.quantity || 0), 0),
+      value: acessoriosInventory.reduce((acc, curr) => acc + (Number(curr.price || 0) * Number(curr.quantity || 0)), 0),
+      soldOut: acessoriosInventory.filter(item => Number(item.quantity || 0) === 0).length,
+    },
+  };
+
+  const pendingItems = activeOrders.filter(o => o.status !== 'Entregue').reduce((acc, curr) => acc + (Number(curr.quantity) || 0), 0);
+
+  const activeTransactions = transactions.filter(t => !t.deleted && t.type === 'income');
+  const activeCopaTransactions = copaTransactions.filter(t => !t.deleted && t.type === 'income');
+
+  const salesByMonth = MONTHS.map((m, i) => {
+    const mainSales = activeTransactions.filter(t => {
+      const d = new Date(t.date + 'T12:00:00');
+      return d.getMonth() === i && d.getFullYear() === new Date().getFullYear();
+    }).length;
+
+    const copaSales = activeCopaTransactions.filter(t => {
+      const rawDate = t.date ? `${t.date}T12:00:00` : null;
+      const d = rawDate ? new Date(rawDate) : new Date(t.createdAt || Date.now());
+      return d.getMonth() === i && d.getFullYear() === new Date().getFullYear();
+    }).length;
+
+    return { name: m.substring(0, 3), vendas: mainSales + copaSales };
+  }).slice(0, new Date().getMonth() + 1);
+
+  const businessCards = [
+    {
+      key: 'camisas',
+      title: 'Camisas de time',
+      stock: segmentedStock.camisasTime.quantity,
+      stockValue: segmentedStock.camisasTime.value,
+      soldOut: segmentedStock.camisasTime.soldOut,
+      className: 'bg-blue-50 border-blue-100',
+      textClass: 'text-blue-700',
+      icon: ShoppingBag,
+    },
+    {
+      key: 'copa',
+      title: 'Copa',
+      stock: segmentedStock.copa.quantity,
+      stockValue: segmentedStock.copa.value,
+      soldOut: segmentedStock.copa.soldOut,
+      className: 'bg-gradient-to-r from-yellow-50 to-green-50 border-yellow-200',
+      textClass: 'text-green-700',
+      icon: BrazilFlagIcon,
+    },
+    {
+      key: 'marca',
+      title: 'Marca própria',
+      stock: segmentedStock.marcaPropria.quantity,
+      stockValue: segmentedStock.marcaPropria.value,
+      soldOut: segmentedStock.marcaPropria.soldOut,
+      className: 'bg-violet-50 border-violet-100',
+      textClass: 'text-violet-700',
+      icon: Store,
+    },
+    {
+      key: 'acessorios',
+      title: 'Acessórios',
+      stock: segmentedStock.acessorios.quantity,
+      stockValue: segmentedStock.acessorios.value,
+      soldOut: segmentedStock.acessorios.soldOut,
+      className: 'bg-orange-50 border-orange-100',
+      textClass: 'text-orange-700',
+      icon: Package,
+    },
+  ];
+
+  return (
+    <div className="space-y-6 animate-fade-in">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+        {businessCards.map(card => {
+          const IconComponent = card.icon;
+          return (
+            <div key={card.key} className={`p-5 rounded-xl shadow-sm border ${card.className}`}>
+              <div className="flex justify-between items-start mb-4">
+                <div>
+                  <p className="text-sm font-medium text-slate-500">{card.title}</p>
+                  <p className={`text-2xl font-bold ${card.textClass}`}>{card.stock} <span className="text-sm font-normal opacity-70">itens</span></p>
+                </div>
+                <div className={`p-3 rounded-lg bg-white ${card.textClass}`}>
+                  <IconComponent size={20} />
+                </div>
+              </div>
+              <div className="space-y-2 text-sm text-slate-600">
+                <p>Valor em estoque: <span className="font-bold text-slate-800">R$ {card.stockValue.toFixed(2)}</span></p>
+                <div className="flex items-center justify-between bg-white/70 rounded-lg px-3 py-2 border border-red-100">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-red-500">Esgotados</span>
+                  <span className="text-sm font-bold text-red-600">{card.soldOut}</span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-1 gap-4">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+          <div className="flex justify-between items-center">
+            <div>
+              <p className="text-slate-500 text-xs font-bold uppercase tracking-wide">Pedidos em Andamento</p>
+              <h3 className="text-xl font-bold text-indigo-600">{pendingItems} itens</h3>
+            </div>
+            <div className="p-3 bg-indigo-50 rounded-lg text-indigo-600"><Truck size={20} /></div>
+          </div>
+        </div>
+      </div>
+
       <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 h-96">
-         <h3 className="text-lg font-semibold mb-4 text-slate-700">Evolução de Vendas (Mensal)</h3>
-         <ResponsiveContainer width="100%" height="100%"><LineChart data={salesData}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" /><XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} /><YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} /><Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} /><Line type="monotone" dataKey="vendas" stroke="#2563eb" strokeWidth={3} dot={{ r: 4, fill: '#2563eb', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} /></LineChart></ResponsiveContainer>
+         <h3 className="text-lg font-semibold mb-4 text-slate-700">Evolução de Vendas (Mensal Consolidada)</h3>
+         <ResponsiveContainer width="100%" height="100%"><LineChart data={salesByMonth}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" /><XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} /><YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} allowDecimals={false} /><Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} /><Line type="monotone" dataKey="vendas" stroke="#2563eb" strokeWidth={3} dot={{ r: 4, fill: '#2563eb', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} /></LineChart></ResponsiveContainer>
       </div>
     </div>
   );
@@ -733,24 +1168,39 @@ const Dashboard = ({ inventory, transactions, orders }) => {
 
 // --- GESTÃO DE ESTOQUE (StockManager) ---
 const StockManager = ({ inventory, user }) => {
-    const [newItem, setNewItem] = useState({ name: '', category: 'Masculino', size: 'M', quantity: 0, price: 0 });
+    const [newItem, setNewItem] = useState({ name: '', productType: 'Camisa de time', category: 'Masculino', size: 'M', quantity: 0, price: 0 });
     const [showForm, setShowForm] = useState(false);
     const [editingId, setEditingId] = useState(null);
     const [filterCategory, setFilterCategory] = useState('Todos');
     const [searchTerm, setSearchTerm] = useState('');
-    
-    // NOVO: Estado para alternar entre estoque geral e copa
-    const [stockView, setStockView] = useState('general'); // 'general' | 'copa'
+    const [stockView, setStockView] = useState('general'); // general | copa | ownBrand
 
-    const handleCategoryChange = (e) => { const newCategory = e.target.value; setNewItem({ ...newItem, category: newCategory, size: SIZES[newCategory][0] }); };
-    
+    const resetForm = () => {
+        setNewItem({
+            name: '',
+            productType: stockView === 'ownBrand' ? 'Marca própria' : 'Camisa de time',
+            category: 'Masculino',
+            size: 'M',
+            quantity: 0,
+            price: 0
+        });
+        setEditingId(null);
+        setShowForm(false);
+    };
+
+    const handleStockCategoryChange = (e) => {
+        const newCategory = e.target.value;
+        setNewItem(prev => ({ ...prev, category: newCategory, size: SIZES[newCategory][0] }));
+    };
+
     const handleEdit = (item) => {
         setNewItem({
             name: item.name,
-            category: item.category,
-            size: item.size,
-            quantity: item.quantity,
-            price: item.price
+            productType: item.productType || 'Camisa de time',
+            category: item.category || 'Masculino',
+            size: item.size || 'M',
+            quantity: item.quantity || 0,
+            price: item.price || 0
         });
         setEditingId(item.id);
         setShowForm(true);
@@ -759,416 +1209,289 @@ const StockManager = ({ inventory, user }) => {
     const handleSaveItem = async () => {
         if (!newItem.name || !user) return;
 
-        const nameToCompare = newItem.name.trim().toLowerCase();
-        // Flag para definir se é item de copa baseado na view atual
+        const cleanedName = newItem.name.trim();
+        const nameToCompare = cleanedName.toLowerCase();
         const isCopaItem = stockView === 'copa';
+        const productTypeToSave = stockView === 'ownBrand' ? 'Marca própria' : 'Camisa de time';
 
         try {
-        if (editingId) {
-            const itemRef = doc(db, 'artifacts', appId, 'public', 'data', 'inventory', editingId);
-            await updateDoc(itemRef, {
-                name: newItem.name,
-                category: newItem.category,
-                size: newItem.size,
-                quantity: Number(newItem.quantity),
-                price: Number(newItem.price)
-                // Nota: Não atualizamos o isCopa aqui para evitar mover itens acidentalmente. 
-                // Se o usuário quiser mudar um item de Geral para Copa, melhor deletar e criar de novo por segurança
-            });
-            alert('Produto atualizado com sucesso!');
-        } else {
-            // Verifica se existe mas NÃO está deletado E coincide com o tipo (Geral/Copa)
-            const existingItem = inventory.find(item => 
-                !item.deleted &&
-                item.name.trim().toLowerCase() === nameToCompare && 
-                item.category === newItem.category && 
-                item.size === newItem.size &&
-                (isCopaItem ? item.isCopa : !item.isCopa)
-            );
-
-            if (existingItem) {
-                const itemRef = doc(db, 'artifacts', appId, 'public', 'data', 'inventory', existingItem.id);
-                const newQuantity = Number(existingItem.quantity) + Number(newItem.quantity);
-                await updateDoc(itemRef, { quantity: newQuantity });
-                alert(`Produto já existente! Estoque somado para ${newQuantity}.`);
-            } else {
-                await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'inventory'), {
-                    ...newItem,
-                    name: newItem.name.trim(),
+            if (editingId) {
+                const itemRef = doc(db, 'artifacts', appId, 'public', 'data', 'inventory', editingId);
+                await updateDoc(itemRef, {
+                    name: cleanedName,
+                    productType: productTypeToSave,
+                    category: newItem.category,
+                    size: newItem.size,
                     quantity: Number(newItem.quantity),
                     price: Number(newItem.price),
-                    isClearance: false,
-                    isCopa: isCopaItem, // Salva a flag
-                    deleted: false, 
-                    createdAt: Date.now()
+                    isCopa: isCopaItem
                 });
+                alert('Produto atualizado com sucesso!');
+            } else {
+                const existingItem = inventory.find(item => {
+                    if (item.deleted) return false;
+                    if ((item.name || '').trim().toLowerCase() !== nameToCompare) return false;
+                    if ((item.category || '') !== newItem.category) return false;
+                    if ((item.size || '') !== newItem.size) return false;
+                    if ((item.productType || 'Camisa de time') !== productTypeToSave) return false;
+                    return Boolean(item.isCopa) === isCopaItem;
+                });
+
+                if (existingItem) {
+                    const itemRef = doc(db, 'artifacts', appId, 'public', 'data', 'inventory', existingItem.id);
+                    const newQuantity = Number(existingItem.quantity || 0) + Number(newItem.quantity || 0);
+                    await updateDoc(itemRef, { quantity: newQuantity, price: Number(newItem.price) || Number(existingItem.price) || 0 });
+                    alert(`Produto já existente. Estoque somado para ${newQuantity}.`);
+                } else {
+                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'inventory'), {
+                        name: cleanedName,
+                        productType: productTypeToSave,
+                        category: newItem.category,
+                        size: newItem.size,
+                        quantity: Number(newItem.quantity),
+                        price: Number(newItem.price),
+                        isClearance: false,
+                        isCopa: isCopaItem,
+                        deleted: false,
+                        createdAt: Date.now()
+                    });
+                }
+            }
+
+            resetForm();
+        } catch (error) {
+            console.error('Erro ao salvar produto:', error);
+            alert('Erro ao salvar produto.');
+        }
+    };
+
+    const handleDelete = async (id) => {
+        if (!user) return;
+        if (window.confirm('Mover este item para a lixeira?')) {
+            try {
+                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'inventory', id), { deleted: true, deletedAt: Date.now() });
+            } catch (error) {
+                console.error('Erro ao excluir item:', error);
+                alert('Erro ao excluir item.');
             }
         }
-
-        setNewItem({ name: '', category: 'Masculino', size: 'M', quantity: 0, price: 0 });
-        setEditingId(null);
-        setShowForm(false);
-
-        } catch (error) {
-        console.error("Erro ao salvar:", error);
-        alert("Erro ao salvar produto.");
-        }
     };
 
-    const handleDelete = async (id) => { 
-        if (window.confirm('Mover este item para a lixeira?') && user) { 
-            try { 
-                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'inventory', id), { deleted: true }); 
-            } catch (error) { 
-                console.error("Erro ao excluir:", error); 
-                alert("Erro ao excluir item.");
-            } 
-        } 
-    };
-    
     const handleToggleClearance = async (item) => {
         if (!user) return;
         const itemRef = doc(db, 'artifacts', appId, 'public', 'data', 'inventory', item.id);
-        if (item.isClearance) { await updateDoc(itemRef, { isClearance: false, price: item.originalPrice || item.price }); } else { await updateDoc(itemRef, { isClearance: true, originalPrice: item.price, price: Number((item.price * 0.7).toFixed(2)) }); }
+        try {
+            if (item.isClearance) {
+                await updateDoc(itemRef, {
+                    isClearance: false,
+                    price: Number(item.originalPrice || item.price || 0)
+                });
+            } else {
+                await updateDoc(itemRef, {
+                    isClearance: true,
+                    originalPrice: Number(item.price || 0),
+                    price: Number((Number(item.price || 0) * 0.7).toFixed(2))
+                });
+            }
+        } catch (error) {
+            console.error('Erro ao alterar queima:', error);
+            alert('Erro ao atualizar item.');
+        }
     };
 
-    // Filtra removendo os deletados E aplicando o filtro Geral vs Copa
-    const activeInventory = inventory.filter(i => {
-        if (i.deleted) return false;
-        // Se a view é Copa, só mostra itens com isCopa = true.
-        // Se a view é Geral, só mostra itens que NÃO são Copa (ou isCopa undefined/false)
-        return stockView === 'copa' ? i.isCopa : !i.isCopa;
+    const activeInventory = inventory.filter(item => {
+        if (item.deleted) return false;
+        const productType = item.productType || 'Camisa de time';
+
+        if (stockView === 'copa') {
+            return item.isCopa === true && productType === 'Camisa de time';
+        }
+
+        if (stockView === 'ownBrand') {
+            return item.isCopa !== true && productType === 'Marca própria';
+        }
+
+        return item.isCopa !== true && productType === 'Camisa de time';
     });
 
     const counts = {
-        masculino: activeInventory.filter(i => i.category === 'Masculino').reduce((acc, i) => acc + i.quantity, 0),
-        feminino: activeInventory.filter(i => i.category === 'Feminino').reduce((acc, i) => acc + i.quantity, 0),
-        infantil: activeInventory.filter(i => i.category === 'Infantil').reduce((acc, i) => acc + i.quantity, 0),
-        queima: activeInventory.filter(i => i.isClearance).reduce((acc, i) => acc + i.quantity, 0),
+        total: activeInventory.reduce((acc, item) => acc + Number(item.quantity || 0), 0),
+        masculino: activeInventory.filter(item => item.category === 'Masculino').reduce((acc, item) => acc + Number(item.quantity || 0), 0),
+        feminino: activeInventory.filter(item => item.category === 'Feminino').reduce((acc, item) => acc + Number(item.quantity || 0), 0),
+        infantil: activeInventory.filter(item => item.category === 'Infantil').reduce((acc, item) => acc + Number(item.quantity || 0), 0),
+        queima: activeInventory.filter(item => item.isClearance).reduce((acc, item) => acc + Number(item.quantity || 0), 0),
     };
 
-    // Lógica de Filtragem e Ordenação
     const filteredInventory = activeInventory
         .filter(item => {
             if (filterCategory === 'Todos') return true;
             if (filterCategory === 'Queima') return item.isClearance;
             return item.category === filterCategory;
         })
-        .filter(item => {
-            if (!searchTerm) return true;
-            return item.name.toLowerCase().includes(searchTerm.toLowerCase());
-        })
+        .filter(item => item.name.toLowerCase().includes(searchTerm.toLowerCase()))
         .sort((a, b) => a.name.localeCompare(b.name));
+
+    const viewTitle = stockView === 'copa' ? 'Estoque Copa' : stockView === 'ownBrand' ? 'Marca Própria' : 'Loja Principal';
 
     return (
         <div className="space-y-6 animate-fade-in">
-        
-        {/* NOVO: Seletor de Tipo de Estoque */}
-        <div className="flex bg-slate-100 p-1 rounded-xl w-fit border border-slate-200 shadow-inner">
-            <button 
-                onClick={() => setStockView('general')} 
-                className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${stockView === 'general' ? 'bg-white text-slate-800 shadow-md' : 'text-slate-500 hover:text-slate-700'}`}
-            >
-                <Package size={18} />
-                Loja Principal
-            </button>
-            <button 
-                onClick={() => setStockView('copa')} 
-                className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${stockView === 'copa' ? 'bg-gradient-to-r from-yellow-100 to-green-100 text-green-800 shadow-md border border-green-200' : 'text-slate-500 hover:text-slate-700'}`}
-            >
-                <BrazilFlagIcon size={18} />
-                Estoque Copa
-            </button>
-        </div>
-
-        {/* Banner Informativo se estiver no modo Copa */}
-        {stockView === 'copa' && (
-            <div className="bg-gradient-to-r from-yellow-50 to-green-50 border border-yellow-200 p-4 rounded-xl flex items-center gap-3 text-yellow-800 text-sm">
-                <BrazilFlagIcon size={24} />
-                <span>Você está visualizando e gerenciando o <strong>Estoque Exclusivo da Copa</strong>. Estes itens não são contabilizados no estoque geral.</span>
-            </div>
-        )}
-
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4"> 
-            <button onClick={() => setFilterCategory('Todos')} className={`p-4 rounded-xl border transition-all ${filterCategory === 'Todos' ? 'bg-slate-800 text-white border-slate-800 shadow-md' : 'bg-white border-slate-200 hover:border-slate-300 text-slate-600'}`}><span className="block font-bold text-xl">{activeInventory.reduce((acc, i) => acc + i.quantity, 0)}</span><span className="text-xs uppercase tracking-wider opacity-70 flex items-center gap-2 justify-center"><Filter size={12}/> Todos</span></button>
-            <button onClick={() => setFilterCategory('Masculino')} className={`p-4 rounded-xl border transition-all ${filterCategory === 'Masculino' ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-200' : 'bg-white border-blue-100 text-blue-600 hover:bg-blue-50'}`}><span className="block font-bold text-xl">{counts.masculino}</span><span className="text-xs uppercase tracking-wider opacity-70">Masculino</span></button>
-            <button onClick={() => setFilterCategory('Feminino')} className={`p-4 rounded-xl border transition-all ${filterCategory === 'Feminino' ? 'bg-pink-600 text-white border-pink-600 shadow-md shadow-pink-200' : 'bg-white border-pink-100 text-pink-600 hover:bg-pink-50'}`}><span className="block font-bold text-xl">{counts.feminino}</span><span className="text-xs uppercase tracking-wider opacity-70">Feminino</span></button>
-            <button onClick={() => setFilterCategory('Infantil')} className={`p-4 rounded-xl border transition-all ${filterCategory === 'Infantil' ? 'bg-orange-500 text-white border-orange-500 shadow-md shadow-orange-200' : 'bg-white border-orange-100 text-orange-600 hover:bg-orange-50'}`}><span className="block font-bold text-xl">{counts.infantil}</span><span className="text-xs uppercase tracking-wider opacity-70">Infantil</span></button>
-            <button onClick={() => setFilterCategory('Queima')} className={`p-4 rounded-xl border transition-all ${filterCategory === 'Queima' ? 'bg-red-600 text-white border-red-600 shadow-md shadow-red-200' : 'bg-white border-red-100 text-red-600 hover:bg-red-50'}`}><span className="block font-bold text-xl">{counts.queima}</span><span className="text-xs uppercase tracking-wider opacity-70 flex items-center gap-2 justify-center"><Flame size={12}/> Queima</span></button>
-        </div>
-        
-        <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-            <h2 className="text-xl font-bold text-slate-800">
-                {filterCategory === 'Todos' ? `Todos os Produtos (${stockView === 'copa' ? 'Copa' : 'Geral'})` : 
-                 filterCategory === 'Queima' ? 'Itens em Queima de Estoque' : 
-                 `Estoque ${filterCategory} (${stockView === 'copa' ? 'Copa' : 'Geral'})`}
-            </h2>
-            
-            <div className="flex gap-2 w-full md:w-auto">
-                {/* Barra de Pesquisa */}
-                <div className="relative flex-1 md:flex-none md:w-64">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                    <input 
-                        type="text" 
-                        placeholder="Buscar peça..." 
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
-                    />
-                </div>
-
+            <div className="flex bg-slate-100 p-1 rounded-xl w-fit border border-slate-200 shadow-inner">
                 <button 
-                    onClick={() => {
-                        setEditingId(null);
-                        setNewItem({ name: '', category: 'Masculino', size: 'M', quantity: 0, price: 0 });
-                        setShowForm(!showForm);
-                    }} 
-                    className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg transition-colors shadow-sm whitespace-nowrap"
+                    onClick={() => setStockView('general')} 
+                    className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${stockView === 'general' ? 'bg-white text-slate-800 shadow-md' : 'text-slate-500 hover:text-slate-700'}`}
                 >
-                    {showForm ? <X size={18}/> : <Plus size={18}/>}
-                    {showForm ? 'Cancelar' : `Novo Item ${stockView === 'copa' ? 'Copa' : ''}`}
+                    <Package size={18} />
+                    Loja Principal
+                </button>
+                <button 
+                    onClick={() => setStockView('copa')} 
+                    className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${stockView === 'copa' ? 'bg-gradient-to-r from-yellow-100 to-green-100 text-green-800 shadow-md border border-green-200' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                    <BrazilFlagIcon size={18} />
+                    Estoque Copa
+                </button>
+                <button 
+                    onClick={() => setStockView('ownBrand')} 
+                    className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${stockView === 'ownBrand' ? 'bg-gradient-to-r from-violet-100 to-fuchsia-100 text-violet-800 shadow-md border border-violet-200' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                    <Store size={18} />
+                    Marca Própria
                 </button>
             </div>
-        </div>
 
-        {showForm && (
-            <div className={`bg-slate-50 p-6 rounded-xl border border-slate-200 animate-slide-down ${stockView === 'copa' ? 'border-l-4 border-l-yellow-400' : 'border-l-4 border-l-slate-800'}`}>
-                <div className="mb-4">
-                    <h3 className="text-lg font-bold text-slate-700">
-                        {editingId ? 'Editar Produto' : `Adicionar Produto (${stockView === 'copa' ? 'Copa' : 'Geral'})`}
-                    </h3>
+            {stockView === 'copa' && (
+                <div className="bg-gradient-to-r from-yellow-50 to-green-50 border border-yellow-200 p-4 rounded-xl flex items-center gap-3 text-yellow-800 text-sm">
+                    <BrazilFlagIcon size={24} />
+                    <span>Você está visualizando o <strong>Estoque da Copa</strong>. Aqui entram apenas camisas de time da Copa.</span>
                 </div>
-            <div className="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
-                <div className="md:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-1">Nome do Produto</label><input type="text" value={newItem.name} onChange={e => setNewItem({...newItem, name: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="Ex: Camiseta Polo"/></div>
-                <div><label className="block text-sm font-medium text-slate-700 mb-1">Categoria</label><select value={newItem.category} onChange={handleCategoryChange} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-emerald-500 outline-none"><option value="Masculino">Masculino</option><option value="Feminino">Feminino</option><option value="Infantil">Infantil</option></select></div>
-                <div><label className="block text-sm font-medium text-slate-700 mb-1">Tamanho</label><select value={newItem.size} onChange={e => setNewItem({...newItem, size: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-emerald-500 outline-none">{SIZES[newItem.category].map(size => (<option key={size} value={size}>{size}</option>))}</select></div>
-                <div><label className="block text-sm font-medium text-slate-700 mb-1">Qtd.</label><input type="number" value={newItem.quantity} onChange={e => setNewItem({...newItem, quantity: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-emerald-500 outline-none"/></div>
-                <div><label className="block text-sm font-medium text-slate-700 mb-1">Preço (R$)</label><input type="number" value={newItem.price} onChange={e => setNewItem({...newItem, price: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-emerald-500 outline-none"/></div>
-            </div>
-            <button onClick={handleSaveItem} className="mt-4 w-full md:w-auto bg-emerald-600 text-white px-6 py-2 rounded hover:bg-emerald-700">
-                {editingId ? 'Atualizar Produto' : 'Salvar Produto'}
-            </button>
-            </div>
-        )}
+            )}
 
-        <div className="overflow-x-auto bg-white rounded-xl shadow-sm border border-slate-200">
-            <table className="w-full text-left border-collapse"><thead className="bg-slate-50 border-b border-slate-200 text-slate-600"><tr><th className="p-4 font-semibold text-sm">Produto</th><th className="p-4 font-semibold text-sm">Categoria</th><th className="p-4 font-semibold text-sm">Tamanho</th><th className="p-4 font-semibold text-sm">Quantidade</th><th className="p-4 font-semibold text-sm">Preço Unit.</th><th className="p-4 font-semibold text-sm text-right">Ações</th></tr></thead>
-            <tbody>
-                {filteredInventory.map((item) => {
-                let rowClass = "border-b border-slate-100 hover:bg-slate-50 transition-colors";
-                if (item.quantity === 0) rowClass = "bg-red-100 border-b border-red-200 hover:bg-red-200 text-red-900";
-                else if (item.quantity === 1) rowClass = "bg-yellow-100 border-b border-yellow-200 hover:bg-yellow-200 text-yellow-900";
-                return (
-                    <tr key={item.id} className={rowClass}>
-                    <td className="p-4 font-medium">
-                        {item.name}
-                        {item.quantity === 0 && <span className="ml-2 text-xs bg-red-600 text-white px-2 py-0.5 rounded-full">ESGOTADO</span>}
-                        {item.quantity === 1 && <span className="ml-2 text-xs bg-yellow-600 text-white px-2 py-0.5 rounded-full">ACABANDO</span>}
-                        {item.isClearance && <span className="ml-2 text-xs bg-orange-500 text-white px-2 py-0.5 rounded-full inline-flex items-center gap-1">🔥 QUEIMA</span>}
-                        {item.isCopa && <span className="ml-2 text-xs bg-green-600 text-white px-2 py-0.5 rounded-full">COPA</span>}
-                    </td>
-                    <td className="p-4 text-sm opacity-80">{item.category}</td>
-                    <td className="p-4 font-semibold text-slate-600"><span className="bg-slate-100 border border-slate-200 px-2 py-1 rounded text-xs">{item.size || '-'}</span></td>
-                    <td className="p-4 font-bold">{item.quantity}</td>
-                    <td className="p-4">{item.isClearance ? (<div><span className="line-through text-slate-400 text-xs">R$ {item.originalPrice?.toFixed(2)}</span><div className="text-orange-600 font-bold">R$ {item.price.toFixed(2)}</div></div>) : (<span>R$ {item.price.toFixed(2)}</span>)}</td>
-                    <td className="p-4 text-right flex justify-end gap-2">
-                        <button onClick={() => handleEdit(item)} className="p-2 text-slate-400 hover:text-blue-600 transition-colors" title="Editar"><Pencil size={18} /></button>
-                        <button onClick={() => handleToggleClearance(item)} title="Queima de Estoque" className={`p-2 rounded-full transition-colors ${item.isClearance ? 'bg-orange-100 text-orange-600' : 'text-slate-300 hover:bg-orange-50 hover:text-orange-500'}`}><Flame size={18} /></button>
-                        <button onClick={() => handleDelete(item.id)} className="p-2 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={18} /></button>
-                    </td>
-                    </tr>
-                );
-                })}
-                {filteredInventory.length === 0 && (<tr><td colSpan="6" className="p-8 text-center text-slate-400">{filterCategory === 'Todos' ? `Nenhum produto cadastrado no Estoque ${stockView === 'copa' ? 'Copa' : 'Geral'}.` : `Nenhum produto encontrado na categoria ${filterCategory}.`}</td></tr>)}
-            </tbody>
-            </table>
-        </div>
+            {stockView === 'ownBrand' && (
+                <div className="bg-gradient-to-r from-violet-50 to-fuchsia-50 border border-violet-200 p-4 rounded-xl flex items-center gap-3 text-violet-800 text-sm">
+                    <Store size={24} />
+                    <span>Você está visualizando o <strong>Estoque de Marca Própria</strong>. Esta aba fica separada da loja principal e da Copa.</span>
+                </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                <button onClick={() => setFilterCategory('Todos')} className={`p-4 rounded-xl border transition-all ${filterCategory === 'Todos' ? 'bg-slate-800 text-white border-slate-800 shadow-md' : 'bg-white border-slate-200 hover:border-slate-300 text-slate-600'}`}><span className="block font-bold text-xl">{counts.total}</span><span className="text-xs uppercase tracking-wider opacity-70 flex items-center gap-2 justify-center"><Filter size={12}/> Todos</span></button>
+                <button onClick={() => setFilterCategory('Masculino')} className={`p-4 rounded-xl border transition-all ${filterCategory === 'Masculino' ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-200' : 'bg-white border-blue-100 text-blue-600 hover:bg-blue-50'}`}><span className="block font-bold text-xl">{counts.masculino}</span><span className="text-xs uppercase tracking-wider opacity-70">Masculino</span></button>
+                <button onClick={() => setFilterCategory('Feminino')} className={`p-4 rounded-xl border transition-all ${filterCategory === 'Feminino' ? 'bg-pink-600 text-white border-pink-600 shadow-md shadow-pink-200' : 'bg-white border-pink-100 text-pink-600 hover:bg-pink-50'}`}><span className="block font-bold text-xl">{counts.feminino}</span><span className="text-xs uppercase tracking-wider opacity-70">Feminino</span></button>
+                <button onClick={() => setFilterCategory('Infantil')} className={`p-4 rounded-xl border transition-all ${filterCategory === 'Infantil' ? 'bg-orange-500 text-white border-orange-500 shadow-md shadow-orange-200' : 'bg-white border-orange-100 text-orange-600 hover:bg-orange-50'}`}><span className="block font-bold text-xl">{counts.infantil}</span><span className="text-xs uppercase tracking-wider opacity-70">Infantil</span></button>
+                <button onClick={() => setFilterCategory('Queima')} className={`p-4 rounded-xl border transition-all ${filterCategory === 'Queima' ? 'bg-red-600 text-white border-red-600 shadow-md shadow-red-200' : 'bg-white border-red-100 text-red-600 hover:bg-red-50'}`}><span className="block font-bold text-xl">{counts.queima}</span><span className="text-xs uppercase tracking-wider opacity-70 flex items-center gap-2 justify-center"><Flame size={12}/> Queima</span></button>
+            </div>
+
+            <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+                <h2 className="text-xl font-bold text-slate-800">
+                    {filterCategory === 'Todos' ? `Todos os Produtos (${viewTitle})` : filterCategory === 'Queima' ? `Itens em Queima (${viewTitle})` : `${filterCategory} (${viewTitle})`}
+                </h2>
+
+                <div className="flex gap-2 w-full md:w-auto">
+                    <div className="relative flex-1 md:flex-none md:w-64">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                        <input 
+                            type="text" 
+                            placeholder="Buscar peça..." 
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
+                        />
+                    </div>
+
+                    <button 
+                        onClick={() => {
+                            setEditingId(null);
+                            setNewItem({
+                                name: '',
+                                productType: stockView === 'ownBrand' ? 'Marca própria' : 'Camisa de time',
+                                category: 'Masculino',
+                                size: 'M',
+                                quantity: 0,
+                                price: 0
+                            });
+                            setShowForm(!showForm);
+                        }} 
+                        className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg transition-colors shadow-sm whitespace-nowrap"
+                    >
+                        {showForm ? <X size={18}/> : <Plus size={18}/>}
+                        {showForm ? 'Cancelar' : `Novo Item ${stockView === 'copa' ? 'Copa' : stockView === 'ownBrand' ? 'Marca Própria' : ''}`}
+                    </button>
+                </div>
+            </div>
+
+            {showForm && (
+                <div className={`bg-slate-50 p-6 rounded-xl border border-slate-200 animate-slide-down ${stockView === 'copa' ? 'border-l-4 border-l-yellow-400' : stockView === 'ownBrand' ? 'border-l-4 border-l-violet-400' : 'border-l-4 border-l-slate-800'}`}>
+                    <div className="mb-4">
+                        <h3 className="text-lg font-bold text-slate-700">
+                            {editingId ? 'Editar Produto' : `Adicionar Produto (${viewTitle})`}
+                        </h3>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
+                        <div className="md:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-1">Nome do produto</label><input type="text" value={newItem.name} onChange={e => setNewItem({...newItem, name: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="Ex: Brasil 2002"/></div>
+                        <div><label className="block text-sm font-medium text-slate-700 mb-1">Tipo de produto</label><select value={stockView === 'ownBrand' ? 'Marca própria' : 'Camisa de time'} disabled className="w-full p-2 border border-slate-300 rounded bg-slate-100 text-slate-500 outline-none"><option value={stockView === 'ownBrand' ? 'Marca própria' : 'Camisa de time'}>{stockView === 'ownBrand' ? 'Marca própria' : 'Camisa de time'}</option></select></div>
+                        <div><label className="block text-sm font-medium text-slate-700 mb-1">Categoria</label><select value={newItem.category} onChange={handleStockCategoryChange} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-emerald-500 outline-none"><option value="Masculino">Masculino</option><option value="Feminino">Feminino</option><option value="Infantil">Infantil</option></select></div>
+                        <div><label className="block text-sm font-medium text-slate-700 mb-1">Tamanho</label><select value={newItem.size} onChange={e => setNewItem({...newItem, size: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-emerald-500 outline-none">{SIZES[newItem.category].map(size => (<option key={size} value={size}>{size}</option>))}</select></div>
+                        <div><label className="block text-sm font-medium text-slate-700 mb-1">Qtd.</label><input type="number" value={newItem.quantity} onChange={e => setNewItem({...newItem, quantity: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-emerald-500 outline-none"/></div>
+                        <div><label className="block text-sm font-medium text-slate-700 mb-1">Preço (R$)</label><input type="number" value={newItem.price} onChange={e => setNewItem({...newItem, price: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-emerald-500 outline-none"/></div>
+                    </div>
+                    <button onClick={handleSaveItem} className="mt-4 w-full md:w-auto bg-emerald-600 text-white px-6 py-2 rounded hover:bg-emerald-700">{editingId ? 'Atualizar Produto' : 'Salvar Produto'}</button>
+                </div>
+            )}
+
+            <div className="overflow-x-auto bg-white rounded-xl shadow-sm border border-slate-200">
+                <table className="w-full text-left border-collapse">
+                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-600">
+                        <tr>
+                            <th className="p-4 font-semibold text-sm">Produto</th>
+                            <th className="p-4 font-semibold text-sm">Categoria</th>
+                            <th className="p-4 font-semibold text-sm">Tamanho</th>
+                            <th className="p-4 font-semibold text-sm">Quantidade</th>
+                            <th className="p-4 font-semibold text-sm">Preço Unit.</th>
+                            <th className="p-4 font-semibold text-sm text-right">Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {filteredInventory.map((item) => {
+                            let rowClass = 'border-b border-slate-100 hover:bg-slate-50 transition-colors';
+                            if (Number(item.quantity) === 0) rowClass = 'bg-red-100 border-b border-red-200 hover:bg-red-200 text-red-900';
+                            else if (Number(item.quantity) === 1) rowClass = 'bg-yellow-100 border-b border-yellow-200 hover:bg-yellow-200 text-yellow-900';
+
+                            return (
+                                <tr key={item.id} className={rowClass}>
+                                    <td className="p-4 font-medium">
+                                        {item.name}
+                                        {Number(item.quantity) === 0 && <span className="ml-2 text-xs bg-red-600 text-white px-2 py-0.5 rounded-full">ESGOTADO</span>}
+                                        {Number(item.quantity) === 1 && <span className="ml-2 text-xs bg-yellow-600 text-white px-2 py-0.5 rounded-full">ACABANDO</span>}
+                                        {item.isClearance && <span className="ml-2 text-xs bg-orange-500 text-white px-2 py-0.5 rounded-full inline-flex items-center gap-1">🔥 QUEIMA</span>}
+                                        {item.isCopa && <span className="ml-2 text-xs bg-green-600 text-white px-2 py-0.5 rounded-full">COPA</span>}
+                                        {(item.productType || 'Camisa de time') === 'Marca própria' && <span className="ml-2 text-xs bg-violet-600 text-white px-2 py-0.5 rounded-full">MARCA PRÓPRIA</span>}
+                                    </td>
+                                    <td className="p-4 text-sm opacity-80">{item.category}</td>
+                                    <td className="p-4 font-semibold text-slate-600"><span className="bg-slate-100 border border-slate-200 px-2 py-1 rounded text-xs">{item.size || '-'}</span></td>
+                                    <td className="p-4 font-bold">{item.quantity}</td>
+                                    <td className="p-4">{item.isClearance ? (<div><span className="line-through text-slate-400 text-xs">R$ {Number(item.originalPrice || 0).toFixed(2)}</span><div className="text-orange-600 font-bold">R$ {Number(item.price || 0).toFixed(2)}</div></div>) : (<span>R$ {Number(item.price || 0).toFixed(2)}</span>)}</td>
+                                    <td className="p-4 text-right flex justify-end gap-2">
+                                        <button onClick={() => handleEdit(item)} className="p-2 text-slate-400 hover:text-blue-600 transition-colors" title="Editar"><Pencil size={18} /></button>
+                                        <button onClick={() => handleToggleClearance(item)} title="Queima de Estoque" className={`p-2 rounded-full transition-colors ${item.isClearance ? 'bg-orange-100 text-orange-600' : 'text-slate-300 hover:bg-orange-50 hover:text-orange-500'}`}><Flame size={18} /></button>
+                                        <button onClick={() => handleDelete(item.id)} className="p-2 text-slate-300 hover:text-red-500 transition-colors" title="Excluir"><Trash2 size={18} /></button>
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                        {filteredInventory.length === 0 && (
+                            <tr><td colSpan="6" className="p-8 text-center text-slate-400">{filterCategory === 'Todos' ? `Nenhum produto cadastrado em ${viewTitle}.` : `Nenhum produto encontrado na categoria ${filterCategory}.`}</td></tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
         </div>
     );
-};
-
-// --- GESTÃO DE PEDIDOS ---
-const OrdersManager = ({ orders, user, inventory }) => {
-  const [newOrder, setNewOrder] = useState({ 
-    date: '', 
-    model: '', 
-    supplier: '', 
-    status: 'Pedido Realizado',
-    category: 'Masculino',
-    size: 'M',
-    quantity: 1
-  });
-  const [showForm, setShowForm] = useState(false);
-  const [editingId, setEditingId] = useState(null); 
-  const [view, setView] = useState('active'); 
-  
-  const statusPriority = { 'Retido na Alfândega': 1, 'Pedido Realizado': 2, 'Enviado': 3, 'Em Trânsito Nacional': 4, 'Liberado Alfândega': 5, 'Entregue': 6 };
-  
-  // FILTRO SOFT DELETE
-  const activeOrders = orders.filter(o => !o.deleted);
-
-  const sortedOrders = [...activeOrders].sort((a, b) => {
-    const priorityA = statusPriority[a.status] || 99;
-    const priorityB = statusPriority[b.status] || 99;
-    return priorityA - priorityB;
-  });
-  
-  const displayedOrders = view === 'active' 
-    ? sortedOrders.filter(o => o.status !== 'Entregue')
-    : sortedOrders.filter(o => o.status === 'Entregue');
-  
-  const handleEdit = (order) => {
-      setNewOrder({
-          date: order.date,
-          model: order.model,
-          supplier: order.supplier,
-          status: order.status,
-          category: order.category || 'Masculino',
-          size: order.size || 'M',
-          quantity: order.quantity || 1
-      });
-      setEditingId(order.id);
-      setShowForm(true);
-  };
-
-  // Função que adiciona o produto ao estoque automaticamente
-  const addToStock = async (orderData) => {
-      // (Lógica addToStock mantida igual)
-      const nameToCompare = orderData.model.trim().toLowerCase();
-      
-      // Nota: Pedidos aqui por padrão vão para o estoque GERAL (!isCopa).
-      // Se quiser que pedidos possam ir para a Copa, precisaríamos de um checkbox no form de pedidos.
-      // Por enquanto, assumimos que pedidos são fluxo normal da loja.
-      
-      const existingItem = inventory.find(item => 
-          !item.deleted && 
-          !item.isCopa && // Só soma se for estoque geral
-          item.name.trim().toLowerCase() === nameToCompare && 
-          item.category === orderData.category && 
-          item.size === orderData.size
-      );
-
-      if (existingItem) {
-        const itemRef = doc(db, 'artifacts', appId, 'public', 'data', 'inventory', existingItem.id);
-        const newQuantity = Number(existingItem.quantity) + Number(orderData.quantity);
-        await updateDoc(itemRef, { quantity: newQuantity });
-      } else {
-        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'inventory'), {
-            name: orderData.model.trim(),
-            category: orderData.category,
-            size: orderData.size,
-            quantity: Number(orderData.quantity),
-            price: 0, 
-            isClearance: false,
-            isCopa: false, // Padrão
-            deleted: false,
-            createdAt: Date.now()
-        });
-      }
-  };
-
-  const handleSaveOrder = async () => { 
-    if (!newOrder.model || !newOrder.supplier || !user) return;
-    
-    try {
-      let shouldAddToStock = false;
-      if (newOrder.status === 'Entregue') {
-          if (!editingId) {
-              shouldAddToStock = true;
-          } else {
-              const oldOrder = orders.find(o => o.id === editingId);
-              if (oldOrder && oldOrder.status !== 'Entregue') {
-                  shouldAddToStock = true;
-              }
-          }
-      }
-
-      if (editingId) {
-        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'orders', editingId), { ...newOrder });
-        alert('Pedido atualizado com sucesso!');
-      } else {
-        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'orders'), {
-            ...newOrder,
-            deleted: false,
-            createdAt: Date.now()
-        });
-      }
-
-      if (shouldAddToStock) {
-          await addToStock(newOrder);
-          alert("Produto adicionado ao estoque GERAL automaticamente!");
-      }
-      setNewOrder({ date: '', model: '', supplier: '', status: 'Pedido Realizado', category: 'Masculino', size: 'M', quantity: 1 });
-      setEditingId(null);
-      setShowForm(false);
-    } catch (error) {
-      console.error("Erro ao salvar pedido:", error);
-      alert("Erro ao salvar pedido.");
-    }
-  };
-
-  const handleDelete = async (id) => {
-    if (window.confirm('Mover pedido para a lixeira?') && user) {
-      try { 
-          // SOFT DELETE
-          await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'orders', id), { deleted: true }); 
-      } catch (error) { console.error("Erro ao deletar:", error); }
-    }
-  };
-  
-  const handleCategoryChange = (e) => { const newCategory = e.target.value; setNewOrder({ ...newOrder, category: newCategory, size: SIZES[newCategory][0] }); };
-  const getStatusColor = (status) => { switch(status) { case 'Retido na Alfândega': return 'bg-red-100 text-red-700 border-red-200'; case 'Enviado': return 'bg-blue-100 text-blue-700 border-blue-200'; case 'Entregue': return 'bg-emerald-100 text-emerald-700 border-emerald-200'; default: return 'bg-slate-100 text-slate-700 border-slate-200'; } };
-
-  return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex bg-slate-100 p-1 rounded-lg w-fit mb-4 border border-slate-200">
-          <button onClick={() => setView('active')} className={`px-4 py-2 text-sm font-medium rounded-md transition-all flex items-center gap-2 ${view === 'active' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}><Truck size={16} /> Pedidos em Andamento</button>
-          <button onClick={() => setView('history')} className={`px-4 py-2 text-sm font-medium rounded-md transition-all flex items-center gap-2 ${view === 'history' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}><History size={16} /> Histórico de Entregas</button>
-      </div>
-
-      <div className="flex justify-between items-center">
-        <h2 className="text-xl font-bold text-slate-800">{view === 'active' ? 'Acompanhamento' : 'Pedidos Entregues'}</h2>
-        <button onClick={() => { setEditingId(null); setNewOrder({ date: '', model: '', supplier: '', status: 'Pedido Realizado', category: 'Masculino', size: 'M', quantity: 1 }); setShowForm(!showForm); }} className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg transition-colors shadow-sm">{showForm ? <X size={18}/> : <Plus size={18}/>}{showForm ? 'Cancelar' : 'Novo Pedido'}</button>
-      </div>
-      
-      {showForm && (
-        <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 animate-slide-down">
-            <div className="mb-4"><h3 className="text-lg font-bold text-slate-700">{editingId ? 'Editar Pedido' : 'Adicionar Pedido'}</h3></div>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-            <div><label className="block text-sm font-medium text-slate-700 mb-1">Data do Pedido</label><input type="date" value={newOrder.date} onChange={e => setNewOrder({...newOrder, date: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-slate-800 outline-none"/></div>
-            <div className="md:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-1">Modelo/Produto</label><input type="text" value={newOrder.model} onChange={e => setNewOrder({...newOrder, model: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-slate-800 outline-none" placeholder="Ex: 50 Camisas Polo"/></div>
-            <div><label className="block text-sm font-medium text-slate-700 mb-1">Categoria</label><select value={newOrder.category} onChange={handleCategoryChange} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-slate-800 outline-none"><option value="Masculino">Masculino</option><option value="Feminino">Feminino</option><option value="Infantil">Infantil</option></select></div>
-            <div><label className="block text-sm font-medium text-slate-700 mb-1">Tamanho</label><select value={newOrder.size} onChange={e => setNewOrder({...newOrder, size: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-slate-800 outline-none">{SIZES[newOrder.category || 'Masculino'].map(size => (<option key={size} value={size}>{size}</option>))}</select></div>
-            <div><label className="block text-sm font-medium text-slate-700 mb-1">Qtd.</label><input type="number" value={newOrder.quantity} onChange={e => setNewOrder({...newOrder, quantity: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-slate-800 outline-none"/></div>
-            <div className="md:col-span-2"><label className="block text-sm font-medium text-slate-700 mb-1">Fornecedor</label><input type="text" value={newOrder.supplier} onChange={e => setNewOrder({...newOrder, supplier: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-slate-800 outline-none" placeholder="Ex: Fábrica SP"/></div>
-            <div><label className="block text-sm font-medium text-slate-700 mb-1">Status</label><select value={newOrder.status} onChange={e => setNewOrder({...newOrder, status: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-slate-800 outline-none"><option>Pedido Realizado</option><option>Enviado</option><option>Retido na Alfândega</option><option>Liberado Alfândega</option><option>Em Trânsito Nacional</option><option>Entregue</option></select></div>
-          </div>
-          <button onClick={handleSaveOrder} className="mt-4 bg-slate-900 text-white px-6 py-2 rounded hover:bg-slate-800">{editingId ? 'Atualizar Pedido' : 'Salvar Pedido'}</button>
-        </div>
-      )}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <table className="w-full text-left"><thead className="bg-slate-50 border-b border-slate-200"><tr><th className="p-4 text-xs font-semibold text-slate-500 uppercase">Data</th><th className="p-4 text-xs font-semibold text-slate-500 uppercase">Modelo</th><th className="p-4 text-xs font-semibold text-slate-500 uppercase">Detalhes</th><th className="p-4 text-xs font-semibold text-slate-500 uppercase">Fornecedor</th><th className="p-4 text-xs font-semibold text-slate-500 uppercase">Status</th><th className="p-4 text-xs font-semibold text-slate-500 uppercase text-right">Ações</th></tr></thead>
-          <tbody className="divide-y divide-slate-100">
-            {displayedOrders.map((order) => (
-              <tr key={order.id} className="hover:bg-slate-50"><td className="p-4 text-sm text-slate-600">{order.date}</td><td className="p-4 text-sm font-medium text-slate-800">{order.model}</td>
-              <td className="p-4 text-sm text-slate-600"><span className="block text-xs font-bold">{order.category} - {order.size}</span><span className="text-xs text-slate-400">{order.quantity} un.</span></td><td className="p-4 text-sm text-slate-600">{order.supplier}</td><td className="p-4"><span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(order.status)}`}>{order.status}</span></td>
-              <td className="p-4 text-right flex justify-end gap-2">
-                  <button onClick={() => handleEdit(order)} className="p-2 text-slate-400 hover:text-blue-600 transition-colors" title="Editar"><Pencil size={18} /></button>
-                  <button onClick={() => handleDelete(order.id)} className="p-2 text-slate-400 hover:text-red-500 transition-colors"><Trash2 size={18} /></button>
-              </td></tr>
-            ))}
-            {displayedOrders.length === 0 && (<tr><td colSpan="6" className="p-8 text-center text-slate-400 text-sm">Nenhum pedido {view === 'active' ? 'em andamento' : 'entregue'}.</td></tr>)}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
 };
 
 const FinancialManager = ({ transactions, user }) => {
   const [selectedMonthIndex, setSelectedMonthIndex] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-  const [newTrans, setNewTrans] = useState({ description: '', amount: '', type: 'income', category: 'Masculino', method: 'Pix', size: 'M', channel: 'Loja Física' });
+  const [newTrans, setNewTrans] = useState({ description: '', amount: '', type: 'income', productType: 'Camisa de time', category: 'Masculino', method: 'Pix', size: 'M', channel: 'Loja Física' });
   const [editingId, setEditingId] = useState(null); 
 
   // FILTRO SOFT DELETE
@@ -1232,8 +1555,28 @@ const FinancialManager = ({ transactions, user }) => {
         <div className="flex justify-between items-center mb-3"><h3 className="text-sm font-bold text-slate-700">{editingId ? 'Editar Lançamento' : (newTrans.type === 'income' ? 'Registrar Venda' : 'Registrar Despesa')} <span className="text-slate-400 font-normal">({selectedYear})</span></h3><div className="flex gap-2">{editingId && (<button onClick={handleCancelEdit} className="px-3 py-1 text-xs font-bold rounded bg-slate-200 text-slate-600 hover:bg-slate-300 transition-colors flex items-center gap-1"><X size={12}/> Cancelar</button>)}<div className="flex bg-white rounded-lg border border-slate-200 p-1"><button onClick={() => setNewTrans({...newTrans, type: 'income', category: 'Masculino'})} disabled={!!editingId} className={`px-3 py-1 text-xs font-bold rounded transition-colors ${newTrans.type === 'income' ? 'bg-emerald-100 text-emerald-600' : 'text-slate-500 hover:bg-slate-50'} ${editingId ? 'opacity-50 cursor-not-allowed' : ''}`}>Venda</button><button onClick={() => setNewTrans({...newTrans, type: 'expense', category: 'Contas'})} disabled={!!editingId} className={`px-3 py-1 text-xs font-bold rounded transition-colors ${newTrans.type === 'expense' ? 'bg-red-100 text-red-600' : 'text-slate-500 hover:bg-slate-50'} ${editingId ? 'opacity-50 cursor-not-allowed' : ''}`}>Despesa</button></div></div></div>
         <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
             <div className="md:col-span-2"><label className="text-xs text-slate-500 block mb-1">{newTrans.type === 'income' ? 'Modelo / Produto' : 'Descrição'}</label><input type="text" value={newTrans.description} onChange={e => setNewTrans({...newTrans, description: e.target.value})} className="w-full p-2 rounded border border-slate-300 text-sm" placeholder={newTrans.type === 'income' ? "Ex: Camiseta Polo Azul" : "Ex: Conta de Luz"}/></div>
-            {newTrans.type === 'income' && (<><div><label className="text-xs text-slate-500 block mb-1">Gênero</label><select value={newTrans.category} onChange={handleFinancialCategoryChange} className="w-full p-2 rounded border border-slate-300 text-sm"><option value="Masculino">Masculino</option><option value="Feminino">Feminino</option><option value="Infantil">Infantil</option></select></div><div><label className="text-xs text-slate-500 block mb-1">Tamanho</label><select value={newTrans.size} onChange={e => setNewTrans({...newTrans, size: e.target.value})} className="w-full p-2 rounded border border-slate-300 text-sm">{(SIZES[newTrans.category] || SIZES['Masculino']).map(size => (<option key={size} value={size}>{size}</option>))}</select></div><div><label className="text-xs text-slate-500 block mb-1">Canal</label><select value={newTrans.channel} onChange={e => setNewTrans({...newTrans, channel: e.target.value})} className="w-full p-2 rounded border border-slate-300 text-sm"><option value="Loja Física">Loja Física</option><option value="Online">Online</option></select></div></>)}
-            {newTrans.type === 'expense' && (<div className="md:col-span-3"><label className="text-xs text-slate-500 block mb-1">Categoria</label><select value={newTrans.category} onChange={e => setNewTrans({...newTrans, category: e.target.value})} className="w-full p-2 rounded border border-slate-300 text-sm"><option>Contas</option><option>Fornecedor</option><option>Funcionários</option><option>Outros</option></select></div>)}
+            {newTrans.type === 'income' && (<><div><label className="text-xs text-slate-500 block mb-1">Tipo de produto</label>
+                  <select value={newTrans.productType} onChange={e => setNewTrans({...newTrans, productType: e.target.value})}>
+                    <option value="Camisa de time">Camisa de time</option>
+                    <option value="Marca própria">Marca própria</option>
+                    <option value="Acessórios">Acessórios</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 block mb-1">Gênero</label>
+                  <select value={newTrans.category} onChange={handleFinancialCategoryChange} className="w-full p-2 rounded border border-slate-300 text-sm"><option value="Masculino">Masculino</option><option value="Feminino">Feminino</option><option value="Infantil">Infantil</option></select></div><div>
+                  {newTrans.productType !== "Acessórios" && (
+                    <>
+                      <label className="text-xs text-slate-500 block mb-1">Tamanho</label>
+                      <select value={newTrans.size} onChange={e => setNewTrans({...newTrans, size: e.target.value})} className="w-full p-2 rounded border border-slate-300 text-sm">
+                        {(SIZES[newTrans.category] || SIZES['Masculino']).map(size => (
+                          <option key={size} value={size}>{size}</option>
+                        ))}
+                      </select>
+                    </>
+                  )}
+                </div><div><label className="text-xs text-slate-500 block mb-1">Canal</label><select value={newTrans.channel} onChange={e => setNewTrans({...newTrans, channel: e.target.value})} className="w-full p-2 rounded border border-slate-300 text-sm"><option value="Loja Física">Loja Física</option><option value="Online">Online</option></select></div></>)}
+            {newTrans.type === 'expense' && (<div className="md:col-span-3"><label className="text-xs text-slate-500 block mb-1">Tipo de produto</label><select value={newTrans.category} onChange={e => setNewTrans({...newTrans, category: e.target.value})} className="w-full p-2 rounded border border-slate-300 text-sm"><option>Contas</option><option>Fornecedor</option><option>Funcionários</option><option>Outros</option></select></div>)}
             <div className="md:col-span-1"><label className="text-xs text-slate-500 block mb-1">Valor</label><input type="number" value={newTrans.amount} onChange={e => setNewTrans({...newTrans, amount: e.target.value})} className="w-full p-2 rounded border border-slate-300 text-sm" placeholder="0.00"/></div>
             <div className="md:col-span-1"><button onClick={handleSaveTransaction} className={`w-full text-white px-4 py-2 rounded text-sm font-medium h-[38px] flex items-center justify-center gap-2 transition-colors ${editingId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-blue-600 hover:bg-blue-700'}`}>{editingId ? <Save size={18}/> : <Plus size={18} />}{editingId ? 'Salvar' : ''}</button></div>
         </div>
@@ -1247,7 +1590,7 @@ const FinancialManager = ({ transactions, user }) => {
                           <td className="p-4 text-sm font-medium text-slate-800">{t.description}<div className="flex gap-1 mt-1"><span className="px-2 py-0.5 rounded-full bg-slate-100 text-[10px] text-slate-500 uppercase">{t.category}</span>{t.type === 'income' && t.productSize && (<span className="px-2 py-0.5 rounded-full bg-indigo-50 text-[10px] text-indigo-500 font-bold border border-indigo-100">{t.productSize}</span>)}{t.type === 'income' && t.channel && (<span className="px-2 py-0.5 rounded-full bg-emerald-50 text-[10px] text-emerald-600 border border-emerald-100">{t.channel}</span>)}</div></td>
                           <td className={`p-4 text-sm font-bold text-right ${t.type === 'income' ? 'text-emerald-600' : 'text-red-600'}`}>{t.type === 'income' ? '+' : '-'} R$ {t.amount.toFixed(2)}</td>
                           <td className="p-4 text-right">
-                              <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                              <div className="flex items-center justify-end gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all">
                                   <button onClick={() => handleEdit(t)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Editar"><Pencil size={16} /></button>
                                   <button onClick={() => handleDelete(t.id)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors" title="Excluir"><Trash2 size={16} /></button>
                               </div>
@@ -1431,8 +1774,8 @@ export default function App() {
           <div className="flex items-center gap-4">{user && (<div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs border transition-colors ${isOnline ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-orange-50 text-orange-600 border-orange-100'}`}>{isOnline ? <Wifi size={12} /> : <WifiOff size={12} />} {isOnline ? 'Online' : 'Modo Offline'}</div>)}<div className="text-right hidden md:block"><p className="text-sm font-bold text-slate-700">Admin</p><p className="text-xs text-slate-500">{storeConfig.name}</p></div><div className="h-10 w-10 bg-slate-200 rounded-full flex items-center justify-center text-slate-600 font-bold">UA</div></div>
         </header>
         <div className="flex-1 overflow-auto p-4 md:p-8">
-          {activeTab === 'dashboard' && <Dashboard inventory={inventory} transactions={transactions} orders={orders} />}
-          {activeTab === 'ranking' && <RankingDashboard transactions={transactions} />}
+          {activeTab === 'dashboard' && <Dashboard inventory={inventory} transactions={transactions} orders={orders} copaTransactions={copaTransactions} />}
+          {activeTab === 'ranking' && <RankingDashboard transactions={transactions} copaTransactions={copaTransactions} />}
           {activeTab === 'stock' && <StockManager inventory={inventory} user={user} />}
           {activeTab === 'orders' && <OrdersManager orders={orders} user={user} inventory={inventory} />}
           {activeTab === 'financial' && <FinancialManager transactions={transactions} user={user} />}
@@ -1444,3 +1787,4 @@ export default function App() {
     </div>
   );
 }
+
