@@ -1514,11 +1514,16 @@ const FinancialManager = ({ transactions, user }) => {
           description: newTrans.description, 
           amount: Number(newTrans.amount), 
           type: newTrans.type, 
+          productType: newTrans.type === 'income' ? (newTrans.productType || 'Camisa de time') : null,
           category: newTrans.category || 'Geral', 
           method: newTrans.method || 'Pix',
           date: editingId ? transactions.find(t => t.id === editingId)?.date : `${year}-${monthStr}-${dayStr}`
       };
-      if (newTrans.type === 'income') { transactionData.productModel = newTrans.description; transactionData.productSize = newTrans.size; transactionData.channel = newTrans.channel; }
+      if (newTrans.type === 'income') { 
+          transactionData.productModel = newTrans.description; 
+          transactionData.productSize = newTrans.productType === 'Acessórios' ? null : newTrans.size; 
+          transactionData.channel = newTrans.channel; 
+      }
 
       try {
           if (editingId) { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', editingId), transactionData); alert('Transação atualizada!'); } 
@@ -1536,8 +1541,8 @@ const FinancialManager = ({ transactions, user }) => {
       } 
   };
 
-  const handleEdit = (t) => { setNewTrans({ description: t.description, amount: t.amount, type: t.type, category: t.category || (t.type === 'income' ? 'Masculino' : 'Contas'), method: t.method || 'Pix', size: t.productSize || 'M', channel: t.channel || 'Loja Física' }); setEditingId(t.id); };
-  const handleCancelEdit = () => { setNewTrans({ description: '', amount: '', type: 'income', category: 'Masculino', method: 'Pix', size: 'M', channel: 'Loja Física' }); setEditingId(null); };
+  const handleEdit = (t) => { setNewTrans({ description: t.description, amount: t.amount, type: t.type, productType: t.productType || 'Camisa de time', category: t.category || (t.type === 'income' ? 'Masculino' : 'Contas'), method: t.method || 'Pix', size: t.productSize || 'M', channel: t.channel || 'Loja Física' }); setEditingId(t.id); };
+  const handleCancelEdit = () => { setNewTrans({ description: '', amount: '', type: 'income', productType: 'Camisa de time', category: 'Masculino', method: 'Pix', size: 'M', channel: 'Loja Física' }); setEditingId(null); };
   const handleFinancialCategoryChange = (e) => { const cat = e.target.value; if (SIZES[cat]) { setNewTrans({...newTrans, category: cat, size: SIZES[cat][0]}); } else { setNewTrans({...newTrans, category: cat}); } };
   
   return (
@@ -1552,11 +1557,11 @@ const FinancialManager = ({ transactions, user }) => {
           <div className={`p-6 rounded-xl shadow-sm border ${balance >= 0 ? 'bg-blue-50 border-blue-100' : 'bg-red-50 border-red-100'}`}><p className={`text-sm font-medium ${balance >= 0 ? 'text-blue-600' : 'text-red-600'}`}>Saldo Líquido</p><p className={`text-2xl font-bold ${balance >= 0 ? 'text-blue-700' : 'text-red-700'}`}>R$ {balance.toFixed(2)}</p></div>
       </div>
       <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
-        <div className="flex justify-between items-center mb-3"><h3 className="text-sm font-bold text-slate-700">{editingId ? 'Editar Lançamento' : (newTrans.type === 'income' ? 'Registrar Venda' : 'Registrar Despesa')} <span className="text-slate-400 font-normal">({selectedYear})</span></h3><div className="flex gap-2">{editingId && (<button onClick={handleCancelEdit} className="px-3 py-1 text-xs font-bold rounded bg-slate-200 text-slate-600 hover:bg-slate-300 transition-colors flex items-center gap-1"><X size={12}/> Cancelar</button>)}<div className="flex bg-white rounded-lg border border-slate-200 p-1"><button onClick={() => setNewTrans({...newTrans, type: 'income', category: 'Masculino'})} disabled={!!editingId} className={`px-3 py-1 text-xs font-bold rounded transition-colors ${newTrans.type === 'income' ? 'bg-emerald-100 text-emerald-600' : 'text-slate-500 hover:bg-slate-50'} ${editingId ? 'opacity-50 cursor-not-allowed' : ''}`}>Venda</button><button onClick={() => setNewTrans({...newTrans, type: 'expense', category: 'Contas'})} disabled={!!editingId} className={`px-3 py-1 text-xs font-bold rounded transition-colors ${newTrans.type === 'expense' ? 'bg-red-100 text-red-600' : 'text-slate-500 hover:bg-slate-50'} ${editingId ? 'opacity-50 cursor-not-allowed' : ''}`}>Despesa</button></div></div></div>
+        <div className="flex justify-between items-center mb-3"><h3 className="text-sm font-bold text-slate-700">{editingId ? 'Editar Lançamento' : (newTrans.type === 'income' ? 'Registrar Venda' : 'Registrar Despesa')} <span className="text-slate-400 font-normal">({selectedYear})</span></h3><div className="flex gap-2">{editingId && (<button onClick={handleCancelEdit} className="px-3 py-1 text-xs font-bold rounded bg-slate-200 text-slate-600 hover:bg-slate-300 transition-colors flex items-center gap-1"><X size={12}/> Cancelar</button>)}<div className="flex bg-white rounded-lg border border-slate-200 p-1"><button onClick={() => setNewTrans({...newTrans, type: 'income', productType: 'Camisa de time', category: 'Masculino'})} disabled={!!editingId} className={`px-3 py-1 text-xs font-bold rounded transition-colors ${newTrans.type === 'income' ? 'bg-emerald-100 text-emerald-600' : 'text-slate-500 hover:bg-slate-50'} ${editingId ? 'opacity-50 cursor-not-allowed' : ''}`}>Venda</button><button onClick={() => setNewTrans({...newTrans, type: 'expense', productType: null, category: 'Contas'})} disabled={!!editingId} className={`px-3 py-1 text-xs font-bold rounded transition-colors ${newTrans.type === 'expense' ? 'bg-red-100 text-red-600' : 'text-slate-500 hover:bg-slate-50'} ${editingId ? 'opacity-50 cursor-not-allowed' : ''}`}>Despesa</button></div></div></div>
         <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
             <div className="md:col-span-2"><label className="text-xs text-slate-500 block mb-1">{newTrans.type === 'income' ? 'Modelo / Produto' : 'Descrição'}</label><input type="text" value={newTrans.description} onChange={e => setNewTrans({...newTrans, description: e.target.value})} className="w-full p-2 rounded border border-slate-300 text-sm" placeholder={newTrans.type === 'income' ? "Ex: Camiseta Polo Azul" : "Ex: Conta de Luz"}/></div>
             {newTrans.type === 'income' && (<><div><label className="text-xs text-slate-500 block mb-1">Tipo de produto</label>
-                  <select value={newTrans.productType} onChange={e => setNewTrans({...newTrans, productType: e.target.value})}>
+                  <select value={newTrans.productType} onChange={e => setNewTrans({...newTrans, productType: e.target.value, size: e.target.value === 'Acessórios' ? '' : (newTrans.size || 'M')})} className="w-full p-2 rounded border border-slate-300 text-sm">
                     <option value="Camisa de time">Camisa de time</option>
                     <option value="Marca própria">Marca própria</option>
                     <option value="Acessórios">Acessórios</option>
@@ -1587,7 +1592,7 @@ const FinancialManager = ({ transactions, user }) => {
                   {filteredTransactions.length > 0 ? filteredTransactions.map(t => (
                       <tr key={t.id} className="hover:bg-slate-50 group">
                           <td className="p-4 text-sm text-slate-600">{t.date}</td>
-                          <td className="p-4 text-sm font-medium text-slate-800">{t.description}<div className="flex gap-1 mt-1"><span className="px-2 py-0.5 rounded-full bg-slate-100 text-[10px] text-slate-500 uppercase">{t.category}</span>{t.type === 'income' && t.productSize && (<span className="px-2 py-0.5 rounded-full bg-indigo-50 text-[10px] text-indigo-500 font-bold border border-indigo-100">{t.productSize}</span>)}{t.type === 'income' && t.channel && (<span className="px-2 py-0.5 rounded-full bg-emerald-50 text-[10px] text-emerald-600 border border-emerald-100">{t.channel}</span>)}</div></td>
+                          <td className="p-4 text-sm font-medium text-slate-800">{t.description}<div className="flex gap-1 mt-1">{t.type === 'income' && t.productType && (<span className="px-2 py-0.5 rounded-full bg-blue-50 text-[10px] text-blue-600 uppercase border border-blue-100">{t.productType}</span>)}<span className="px-2 py-0.5 rounded-full bg-slate-100 text-[10px] text-slate-500 uppercase">{t.category}</span>{t.type === 'income' && t.productSize && (<span className="px-2 py-0.5 rounded-full bg-indigo-50 text-[10px] text-indigo-500 font-bold border border-indigo-100">{t.productSize}</span>)}{t.type === 'income' && t.channel && (<span className="px-2 py-0.5 rounded-full bg-emerald-50 text-[10px] text-emerald-600 border border-emerald-100">{t.channel}</span>)}</div></td>
                           <td className={`p-4 text-sm font-bold text-right ${t.type === 'income' ? 'text-emerald-600' : 'text-red-600'}`}>{t.type === 'income' ? '+' : '-'} R$ {t.amount.toFixed(2)}</td>
                           <td className="p-4 text-right">
                               <div className="flex items-center justify-end gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all">
